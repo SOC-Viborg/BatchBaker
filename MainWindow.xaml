@@ -13,7 +13,7 @@
         </Grid.RowDefinitions>
         <Menu Margin="0,0,0,27">
             <MenuItem Header="File">
-                <MenuItem Header="_Import"/>
+                <MenuItem Header="_Import" Click="ImportCSV_Click"/>
                 <MenuItem Header="_Save"/>
                 <MenuItem Header="_Exit"/>
             </MenuItem>
@@ -29,7 +29,7 @@
             </MenuItem>
         </Menu>
         <TreeView Name="myTreeViewEvent" Margin="0,28,689,0" Grid.RowSpan="2" >
-            <TreeViewItem Header="Employee1" IsSelected="True">
+            <TreeViewItem Header="It-Support" IsSelected="True">
                 <TreeViewItem Header="Jesper Aaberg"/>
                 <TreeViewItem Header="Employee Number">
                     <TreeViewItem Header="12345"/>
@@ -40,7 +40,40 @@
                     <TreeViewItem Header="Thursday"/>
                 </TreeViewItem>
             </TreeViewItem>
-            <TreeViewItem Header="Employee2">
+            <TreeViewItem Header="Programmør">
+                <TreeViewItem Header="Dominik Paiha"/>
+                <TreeViewItem Header="Employee Number">
+                    <TreeViewItem Header="98765"/>
+                </TreeViewItem>
+                <TreeViewItem Header="Work Days">
+                    <TreeViewItem Header="Tuesday"/>
+                    <TreeViewItem Header="Wednesday"/>
+                    <TreeViewItem Header="Friday"/>
+                </TreeViewItem>
+            </TreeViewItem>
+            <TreeViewItem Header="Infrastruktur">
+                <TreeViewItem Header="Dominik Paiha"/>
+                <TreeViewItem Header="Employee Number">
+                    <TreeViewItem Header="98765"/>
+                </TreeViewItem>
+                <TreeViewItem Header="Work Days">
+                    <TreeViewItem Header="Tuesday"/>
+                    <TreeViewItem Header="Wednesday"/>
+                    <TreeViewItem Header="Friday"/>
+                </TreeViewItem>
+            </TreeViewItem>
+            <TreeViewItem Header="Business">
+                <TreeViewItem Header="Dominik Paiha"/>
+                <TreeViewItem Header="Employee Number">
+                    <TreeViewItem Header="98765"/>
+                </TreeViewItem>
+                <TreeViewItem Header="Work Days">
+                    <TreeViewItem Header="Tuesday"/>
+                    <TreeViewItem Header="Wednesday"/>
+                    <TreeViewItem Header="Friday"/>
+                </TreeViewItem>
+            </TreeViewItem>
+            <TreeViewItem Header="Energi">
                 <TreeViewItem Header="Dominik Paiha"/>
                 <TreeViewItem Header="Employee Number">
                     <TreeViewItem Header="98765"/>
@@ -52,5 +85,16 @@
                 </TreeViewItem>
             </TreeViewItem>
         </TreeView>
+        <ListView x:Name="ListViewPeople" Margin="109,28,2,0" Grid.RowSpan="2">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="Fornavn" Width="100" DisplayMemberBinding="{Binding Path=FirstName}"/>
+                    <GridViewColumn Header="Efternavn" Width="150" DisplayMemberBinding="{Binding Path=LastName}"/>
+                    <GridViewColumn Header="Brugernavn" Width="40" DisplayMemberBinding="{Binding Path=Username}"/>
+                    <GridViewColumn Header="Email" Width="200" DisplayMemberBinding="{Binding Path=Email}"/>
+                    <GridViewColumn Header="Telefon" Width="100" DisplayMemberBinding="{Binding Path=PhoneNumber}"/>
+                </GridView>
+            </ListView.View>
+        </ListView>
     </Grid>
 </Window>

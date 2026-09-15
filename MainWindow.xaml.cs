@@ -8,9 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
-using System.DirectoryServices.ActiveDirectory;
-using System.Security.Cryptography.X509Certificates;
-using System.DirectoryServices;
+using Microsoft.Win32;
 
     namespace BatchBaker
 {
@@ -19,14 +17,35 @@ using System.DirectoryServices;
     /// </summary>
     public partial class MainWindow : Window
     {
-        private static string _serverName = "your_server_name"; // Replace with your server name
-        private static string _username = "your_username"; // Replace with your username
-        private static string _password = "your_password"; // Replace with your password
-        private static string _domain = "your_domain"; // Replace with your domain
-        
         public MainWindow()
         {
             InitializeComponent();
         }
+
+        private void ImportCSV_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                FilterIndex = 1,
+                RestoreDirectory = true
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    string filePath = openFileDialog.FileName;
+                    var people = MainWindowHelpers.ReadCSV(filePath);
+                    ListViewPeople.ItemsSource = people;
+                    MessageBox.Show($"Successfully loaded {people.Count()} records from the CSV file.", "Import Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error loading CSV file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
     }
 }
