@@ -1,13 +1,9 @@
-﻿using System.Text;
+﻿using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
-using System.Windows.Shapes;
 using Microsoft.Win32;
 
     namespace BatchBaker
@@ -21,6 +17,23 @@ using Microsoft.Win32;
         {
             InitializeComponent();
         }
+
+        private void OnSaveClicked(object sender, RoutedEventArgs e)
+        {
+            
+        }
+
+        private void OnExitClicked(object sender, RoutedEventArgs e)
+        {
+            Application.Current.Shutdown();
+        }
+
+        private void ClickHandler3(object sender, RoutedEventArgs e)
+        {
+            //do something
+
+        }
+
 
         private void ImportCSV_Click(object sender, RoutedEventArgs e)
         {
@@ -45,6 +58,10 @@ using Microsoft.Win32;
                     MessageBox.Show($"Error loading CSV file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+        public void SaveUsers_Click(object sender, RoutedEventArgs e)
+        {
+            
         }
 
     }
