@@ -23,7 +23,7 @@
                 <MenuItem Header="Permissions"/>
                 <MenuItem Header="Status"/>
             </MenuItem>
-            <MenuItem Header="Delete"></MenuItem>
+            <MenuItem Header="Delete" Click="OnDeleteClicked"/>
             <MenuItem Header="Help">
                 <MenuItem Header="_About"/>
             </MenuItem>
