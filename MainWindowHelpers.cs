@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.DirectoryServices;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace BatchBaker
 {
@@ -19,7 +21,8 @@ namespace BatchBaker
                     throw new FileNotFoundException($"CSV file not found: {fullPath}");
                 }
 
-                string[] lines = File.ReadAllLines(fullPath);
+                // Read file with UTF-8 encoding to properly handle special characters (Æ, Ø, Å)
+                string[] lines = File.ReadAllLines(fullPath, Encoding.UTF8);
 
                 // Skip header row and project each line as a Person
                 return lines.Skip(1).Select(line =>
@@ -75,19 +78,66 @@ namespace BatchBaker
             { nameof(Person.PhoneNumber), "Telefonnummer" },
             { nameof(Person.TemporaryPassword), "Midlertidig adgangskode" }
         };
+
+        public static void CreateActiveDirectoryUser(string username, string email, string password)
+        {
+            try
+            {
+                string ldapPath = "LDAP://CN=Users,DC=yourdomain,DC=com"; // Update with your domain
+                using (DirectoryEntry entry = new DirectoryEntry(ldapPath))
+                {
+                    using (DirectorySearcher search = new DirectorySearcher(entry))
+                    {
+                        search.Filter = $"(&(objectClass=user)(sAMAccountName={username}))";
+                        SearchResult? result = search.FindOne();
+
+                        if (result == null)
+                        {
+                            // Create new user
+                            DirectoryEntry newUser = entry.Children.Add($"CN={username}", "user");
+                            try
+                            {
+                                newUser.Properties["sAMAccountName"].Value = username;
+                                newUser.Properties["userPrincipalName"].Value = email;
+                                newUser.Properties["displayName"].Value = username;
+                                newUser.CommitChanges();
+
+                                // Set password
+                                newUser.Invoke("SetPassword", new object[] { password });
+                                newUser.Properties["userAccountControl"].Value = 512; // 512 = Normal user account
+                                newUser.CommitChanges();
+                            }
+                            finally
+                            {
+                                newUser?.Dispose();
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Error creating Active Directory user: {ex.Message}", ex);
+            }
+        }
+
+        internal static void CreateActiveDirectoryUser(string filePath, IEnumerable<Person> people)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     public class Person
     {
-        public string FirstName { get; set; }
-        public string LastName { get; set; }
-        public string Username { get; set; }
-        public string Email { get; set; }
-        public string Department { get; set; }
-        public string Country { get; set; }
-        public string Title { get; set; }
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? Username { get; set; }
+        public string? Email { get; set; }
+        public string? Department { get; set; }
+        public string? Country { get; set; }
+        public string? Title { get; set; }
         public int PhoneNumber { get; set; }
-        public string TemporaryPassword { get; set; }
+        public string? TemporaryPassword { get; set; }
 
         public Person()
         {
@@ -105,5 +155,5 @@ namespace BatchBaker
             PhoneNumber = phoneNumber;
             TemporaryPassword = password;
         }
-    }       
+    }
 }
