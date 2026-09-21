@@ -120,6 +120,11 @@ namespace BatchBaker
                 throw new InvalidOperationException($"Error creating Active Directory user: {ex.Message}", ex);
             }
         }
+
+        internal static void CreateActiveDirectoryUser(string filePath, IEnumerable<Person> people)
+        {
+            throw new NotImplementedException();
+        }
     }
 
     public class Person
