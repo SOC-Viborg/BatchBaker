@@ -1,3 +1,4 @@
+using BatchBaker.Models;
 using System;
 using System.Collections.Generic;
 using System.DirectoryServices;
@@ -9,7 +10,7 @@ namespace BatchBaker
 {
     internal static class MainWindowHelpers
     {
-        public static IEnumerable<Person> ReadCSV(string filePath)
+        public static IEnumerable<People> ReadCSV(string filePath)
         {
             try
             {
@@ -33,26 +34,38 @@ namespace BatchBaker
                         throw new FormatException($"CSV line does not contain expected 9 fields: {line}");
                     }
 
-                    // Parse phone number, trimming whitespace and removing formatting characters
-                    string phoneStr = data[7].Trim().Replace(" ", "").Replace("-", "").Replace("+", "");
-                    if (!int.TryParse(phoneStr, out int phoneNumber))
-                    {
-                        // If it's not parseable as int, store 0 or try alternative approaches
-                        phoneNumber = 0;
-                    }
+                    //// Parse phone number, trimming whitespace and removing formatting characters
+                    //string phoneStr = data[7].Trim().Replace(" ", "").Replace("-", "").Replace("+", "");
+                    //if (!int.TryParse(phoneStr, out int phoneNumber))
+                    //{
+                    //    // If it's not parseable as int, store 0 or try alternative approaches
+                    //    phoneNumber = 0;
+                    //}
 
                     // Use the full constructor with all 9 fields, trimming whitespace from all fields
-                    return new Person(
-                        data[0].Trim(), 
-                        data[1].Trim(), 
-                        data[2].Trim(), 
-                        data[3].Trim(), 
-                        data[4].Trim(), 
-                        data[5].Trim(), 
-                        data[6].Trim(), 
-                        phoneNumber, 
-                        data[8].Trim()
-                    );
+                    //return new People(
+                    //    data[0].Trim(), 
+                    //    data[1].Trim(), 
+                    //    data[2].Trim(), 
+                    //    data[3].Trim(), 
+                    //    data[4].Trim(), 
+                    //    data[5].Trim(), 
+                    //    data[6].Trim(), 
+                    //    phoneNumber, 
+                    //    data[8].Trim()
+                    //);
+                    return new People
+                    {
+                        FirstName = data[0].Trim(),
+                        LastName = data[1].Trim(),
+                        Username = data[2].Trim(),
+                        Email = data[3].Trim(),
+                        Department = data[4].Trim(),
+                        Country = data[5].Trim(),
+                        Title = data[6].Trim(),
+                        PhoneNumber = data[7].Trim(),
+                        TemporaryPassword = data[8].Trim()
+                    };
                 }).ToList(); // Materialize the list to ensure all parsing happens before returning
             }
             catch (FileNotFoundException)
@@ -68,15 +81,15 @@ namespace BatchBaker
         // Danish display labels for UI
         public static readonly Dictionary<string, string> DanishLabels = new()
         {
-            { nameof(Person.FirstName), "Fornavn" },
-            { nameof(Person.LastName), "Efternavn" },
-            { nameof(Person.Username), "Brugernavn" },
-            { nameof(Person.Email), "Email" },
-            { nameof(Person.Department), "Afdeling" },
-            { nameof(Person.Country), "Land" },
-            { nameof(Person.Title), "Titel" },
-            { nameof(Person.PhoneNumber), "Telefonnummer" },
-            { nameof(Person.TemporaryPassword), "Midlertidig adgangskode" }
+            { nameof(People.FirstName), "Fornavn" },
+            { nameof(People.LastName), "Efternavn" },
+            { nameof(People.Username), "Brugernavn" },
+            { nameof(People.Email), "Email" },
+            { nameof(People.Department), "Afdeling" },
+            { nameof(People.Country), "Land" },
+            { nameof(People.Title), "Titel" },
+            { nameof(People.PhoneNumber), "Telefonnummer" },
+            { nameof(People.TemporaryPassword), "Midlertidig adgangskode" }
         };
 
         public static void CreateActiveDirectoryUser(string username, string email, string password)
@@ -129,6 +142,7 @@ namespace BatchBaker
 
     public class Person
     {
+        public int? Id { get; set; }
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public string? Username { get; set; }
@@ -138,6 +152,7 @@ namespace BatchBaker
         public string? Title { get; set; }
         public int PhoneNumber { get; set; }
         public string? TemporaryPassword { get; set; }
+        public object ImportSetId { get; internal set; }
 
         public Person()
         {

@@ -6,6 +6,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
+using BatchBaker.Data;
+using BatchBaker.Models;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
 
 namespace BatchBaker
@@ -15,43 +18,60 @@ namespace BatchBaker
     /// </summary>
     public partial class MainWindow : Window
     {
+        public AppDbContext dbContext = new AppDbContext();
         public MainWindow()
         {
             InitializeComponent();
 
-            try
+            //try
+            //{
+            //    var repository = new PersonRepository();
+            //    repository.EnsureCreated();
+            //    ListViewPeople.ItemsSource = repository.LoadAll();
+            //}
+            //catch (Exception ex)
+            //{
+            //    MessageBox.Show($"Error loading saved users: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            //}
+            dbContext.Database.EnsureCreated();
+            var import = dbContext.ImportSets.Include(i => i.People).OrderByDescending(i => i.ImportDate).FirstOrDefault();
+            if (import != null)
             {
-                var repository = new PersonRepository();
-                repository.EnsureCreated();
-                ListViewPeople.ItemsSource = repository.LoadAll();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error loading saved users: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ListViewPeople.ItemsSource = import.People;
             }
         }
 
         private void OnSaveClicked(object sender, RoutedEventArgs e)
         {
-            var people = ListViewPeople.ItemsSource as IEnumerable<Person>;
+            var people = ListViewPeople.ItemsSource as IEnumerable<People>;
             if (people == null || !people.Any())
             {
                 MessageBox.Show("No records loaded to save. Import a CSV file first.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            try
+            foreach (var person in people)
             {
-                var repository = new PersonRepository();
-                repository.EnsureCreated();
-                int count = repository.SaveAll(people);
-                ListViewPeople.ItemsSource = repository.LoadAll();
-                MessageBox.Show($"Successfully saved {count} record(s) to the database.", "Save Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                Console.WriteLine($"Saving Person: {person.FirstName} {person.LastName}, Username: {person.Username}, Email: {person.Email}");
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error saving to database: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+
+            //try
+            //{
+            //    var repository = new PersonRepository();
+            //    int count = repository.SaveAll(people);
+            //    ListViewPeople.ItemsSource = repository.LoadAll();
+            //    MessageBox.Show($"Successfully saved {count} record(s) to the database.", "Save Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+            //}
+            //catch (Exception ex)
+            //{
+            //    MessageBox.Show($"Error saving to database: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            //}
+
+            var import = new ImportSet { ImportDate = DateTime.Now, RecordCount = people.Count() };
+            dbContext.ImportSets.Add(import);
+            dbContext.SaveChanges();
+            import.People.AddRange(people);
+            dbContext.SaveChanges();
         }
 
         private void OnDeleteClicked(object sender, RoutedEventArgs e)

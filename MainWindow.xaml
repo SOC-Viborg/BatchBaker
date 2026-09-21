@@ -88,15 +88,15 @@
         <ListView x:Name="ListViewPeople" Margin="109,28,2,0" Grid.RowSpan="2">
             <ListView.View>
                 <GridView>
-                    <GridViewColumn Header="Fornavn" Width="100" DisplayMemberBinding="{Binding Path=FirstName}"/>
-                    <GridViewColumn Header="Efternavn" Width="150" DisplayMemberBinding="{Binding Path=LastName}"/>
-                    <GridViewColumn Header="Brugernavn" Width="40" DisplayMemberBinding="{Binding Path=Username}"/>
-                    <GridViewColumn Header="Email" Width="200" DisplayMemberBinding="{Binding Path=Email}"/>
-                    <GridViewColumn Header="Department" Width="100" DisplayMemberBinding="{Binding Path=Department}"/>
-                    <GridViewColumn Header="Country" Width="100" DisplayMemberBinding="{Binding Path=Country}"/>
-                    <GridViewColumn Header="Title" Width="150" DisplayMemberBinding="{Binding Path=Title}"/>
-                    <GridViewColumn Header="PhoneNumber" Width="40" DisplayMemberBinding="{Binding Path=PhoneNumber}"/>
-                    <GridViewColumn Header="TemporaryPassword" Width="200" DisplayMemberBinding="{Binding Path=TemporaryPassword}"/>
+                    <GridViewColumn Header="Fornavn"  DisplayMemberBinding="{Binding Path=FirstName}"/>
+                    <GridViewColumn Header="Efternavn"  DisplayMemberBinding="{Binding Path=LastName}"/>
+                    <GridViewColumn Header="Brugernavn"  DisplayMemberBinding="{Binding Path=Username}"/>
+                    <GridViewColumn Header="Email"  DisplayMemberBinding="{Binding Path=Email}"/>
+                    <GridViewColumn Header="Department"  DisplayMemberBinding="{Binding Path=Department}"/>
+                    <GridViewColumn Header="Country"  DisplayMemberBinding="{Binding Path=Country}"/>
+                    <GridViewColumn Header="Title"  DisplayMemberBinding="{Binding Path=Title}"/>
+                    <GridViewColumn Header="PhoneNumber" DisplayMemberBinding="{Binding Path=PhoneNumber}"/>
+                    <GridViewColumn Header="TemporaryPassword"  DisplayMemberBinding="{Binding Path=TemporaryPassword}"/>
                 </GridView>
             </ListView.View>
         </ListView>
