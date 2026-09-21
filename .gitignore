@@ -10,6 +10,9 @@
 *.userosscache
 *.sln.docstates
 
+# Claude AI workspace files
+.claude/
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
@@ -360,4 +363,7 @@ MigrationBackup/
 .ionide/
 
 # Fody - auto-generated XML schema
-FodyWeavers.xsd
+FodyWeavers.xsd 
+
+# Claude AI Visual Studio extension working folder
+/.Claude
