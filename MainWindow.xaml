@@ -6,6 +6,9 @@
         xmlns:local="clr-namespace:BatchBaker"
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800">
+    <Window.Resources>
+        <local:BoolToStatusConverter x:Key="BoolToStatusConverter"/>
+    </Window.Resources>
     <Canvas x:Name="canvasRoot" Background="White">
     <Grid>
         <Grid.RowDefinitions>
@@ -16,6 +19,7 @@
             <MenuItem Header="File">
                 <MenuItem Header="_Import" Click="ImportCSV_Click"/>
                 <MenuItem Header="_Save" Click="OnSaveClicked"/>
+                <MenuItem Header="_Create in Active Directory" Click="OnCreateActiveDirectoryClicked"/>
                 <MenuItem Header="_Exit" Click="OnExitClicked"/>
             </MenuItem>
             <MenuItem Header="Manage">
@@ -88,6 +92,8 @@
         <ListView x:Name="ListViewPeople" Margin="109,28,2,0" Grid.RowSpan="2">
             <ListView.View>
                 <GridView>
+                    <GridViewColumn Header="Status" Width="70" DisplayMemberBinding="{Binding Path=ImportSuccess, Converter={StaticResource BoolToStatusConverter}}"/>
+                    <GridViewColumn Header="Reason" Width="180" DisplayMemberBinding="{Binding Path=ImportError}"/>
                     <GridViewColumn Header="Fornavn"  DisplayMemberBinding="{Binding Path=FirstName}"/>
                     <GridViewColumn Header="Efternavn"  DisplayMemberBinding="{Binding Path=LastName}"/>
                     <GridViewColumn Header="Brugernavn"  DisplayMemberBinding="{Binding Path=Username}"/>

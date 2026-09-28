@@ -84,6 +84,28 @@ namespace BatchBaker
             }
         }
 
+        private void OnCreateActiveDirectoryClicked(object sender, RoutedEventArgs e)
+        {
+            var people = (ListViewPeople.ItemsSource as IEnumerable<People>)?.ToList();
+            if (people == null || people.Count == 0)
+            {
+                MessageBox.Show("No records loaded. Import a CSV file first.", "Nothing to Create", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string ldapPath = AppSettings.Instance.ActiveDirectory.LdapPath;
+            MainWindowHelpers.CreateActiveDirectoryUsers(people, ldapPath);
+
+            int succeeded = people.Count(p => p.ImportSuccess);
+            int failed = people.Count - succeeded;
+            string summary = failed == 0
+                ? $"Created {succeeded} user(s) in Active Directory."
+                : $"Created {succeeded} user(s). {failed} failed — see the Reason column for details.";
+            MessageBox.Show(summary, "Active Directory", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            ListViewPeople.Items.Refresh();
+        }
+
         private void OnExitClicked(object sender, RoutedEventArgs e)
         {
             Application.Current.Shutdown();

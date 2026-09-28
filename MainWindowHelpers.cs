@@ -128,83 +128,96 @@ namespace BatchBaker
             { nameof(People.TemporaryPassword), "Midlertidig adgangskode" }
         };
 
-        public static void CreateActiveDirectoryUser(string username, string email, string password)
+        // Creates one user in AD, or marks the row as a pre-existing duplicate instead
+        // of silently doing nothing. Throws on genuine failures (connection, policy,
+        // permissions) — callers should catch per-row so one bad row doesn't abort a batch.
+        public static void CreateActiveDirectoryUser(People person, string ldapPath)
         {
+            string username = person.Username ?? string.Empty;
+
+            using var entry = new DirectoryEntry(ldapPath);
+            using var search = new DirectorySearcher(entry)
+            {
+                Filter = $"(&(objectClass=user)(sAMAccountName={EscapeLdapFilterValue(username)}))"
+            };
+
+            SearchResult? existingResult = search.FindOne();
+            if (existingResult != null)
+            {
+                person.ImportSuccess = false;
+                person.ImportError = "User already exists in Active Directory";
+                return;
+            }
+
+            DirectoryEntry newUser = entry.Children.Add($"CN={username}", "user");
             try
             {
-                string ldapPath = "LDAP://CN=Users,DC=yourdomain,DC=com"; // Update with your domain
-                using (DirectoryEntry entry = new DirectoryEntry(ldapPath))
+                newUser.Properties["sAMAccountName"].Value = username;
+                newUser.Properties["userPrincipalName"].Value = person.Email ?? string.Empty;
+                newUser.Properties["givenName"].Value = person.FirstName ?? string.Empty;
+                newUser.Properties["sn"].Value = person.LastName ?? string.Empty;
+                newUser.Properties["displayName"].Value = $"{person.FirstName} {person.LastName}".Trim();
+                if (!string.IsNullOrWhiteSpace(person.Department))
                 {
-                    using (DirectorySearcher search = new DirectorySearcher(entry))
-                    {
-                        search.Filter = $"(&(objectClass=user)(sAMAccountName={username}))";
-                        SearchResult? result = search.FindOne();
+                    newUser.Properties["department"].Value = person.Department;
+                }
+                if (!string.IsNullOrWhiteSpace(person.Title))
+                {
+                    newUser.Properties["title"].Value = person.Title;
+                }
+                if (!string.IsNullOrWhiteSpace(person.Country))
+                {
+                    newUser.Properties["co"].Value = person.Country;
+                }
+                if (!string.IsNullOrWhiteSpace(person.PhoneNumber))
+                {
+                    newUser.Properties["telephoneNumber"].Value = person.PhoneNumber;
+                }
+                newUser.CommitChanges();
 
-                        if (result == null)
-                        {
-                            // Create new user
-                            DirectoryEntry newUser = entry.Children.Add($"CN={username}", "user");
-                            try
-                            {
-                                newUser.Properties["sAMAccountName"].Value = username;
-                                newUser.Properties["userPrincipalName"].Value = email;
-                                newUser.Properties["displayName"].Value = username;
-                                newUser.CommitChanges();
+                newUser.Invoke("SetPassword", new object[] { person.TemporaryPassword ?? string.Empty });
+                newUser.Properties["pwdLastSet"].Value = 0; // forces a password change at next logon
+                newUser.Properties["userAccountControl"].Value = 512; // normal, enabled account
+                newUser.CommitChanges();
 
-                                // Set password
-                                newUser.Invoke("SetPassword", new object[] { password });
-                                newUser.Properties["userAccountControl"].Value = 512; // 512 = Normal user account
-                                newUser.CommitChanges();
-                            }
-                            finally
-                            {
-                                newUser?.Dispose();
-                            }
-                        }
-                    }
+                person.ImportSuccess = true;
+                person.ImportError = string.Empty;
+            }
+            finally
+            {
+                newUser.Dispose();
+            }
+        }
+
+        // Creates every row in Active Directory, catching each row's failure
+        // individually so one bad row doesn't abort the rest of the batch.
+        // Results land in ImportSuccess/ImportError per row, same as import validation.
+        public static void CreateActiveDirectoryUsers(IEnumerable<People> people, string ldapPath)
+        {
+            foreach (var person in people)
+            {
+                try
+                {
+                    CreateActiveDirectoryUser(person, ldapPath);
+                }
+                catch (Exception ex)
+                {
+                    person.ImportSuccess = false;
+                    person.ImportError = ex.Message;
                 }
             }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Error creating Active Directory user: {ex.Message}", ex);
-            }
         }
 
-        internal static void CreateActiveDirectoryUser(string filePath, IEnumerable<Person> people)
+        // Escapes RFC 4515 special characters so a username can't alter the meaning
+        // of the LDAP search filter it's inserted into.
+        private static string EscapeLdapFilterValue(string value)
         {
-            throw new NotImplementedException();
-        }
-    }
-
-    public class Person
-    {
-        public int? Id { get; set; }
-        public string? FirstName { get; set; }
-        public string? LastName { get; set; }
-        public string? Username { get; set; }
-        public string? Email { get; set; }
-        public string? Department { get; set; }
-        public string? Country { get; set; }
-        public string? Title { get; set; }
-        public int PhoneNumber { get; set; }
-        public string? TemporaryPassword { get; set; }
-        public object ImportSetId { get; internal set; }
-
-        public Person()
-        {
-        }
-
-        public Person(string firstName, string lastName, string username, string email, string department, string country, string title, int phoneNumber, string password)
-        {
-            FirstName = firstName;
-            LastName = lastName;
-            Username = username;
-            Email = email;
-            Department = department;
-            Country = country;
-            Title = title;
-            PhoneNumber = phoneNumber;
-            TemporaryPassword = password;
+            return value
+                .Replace("\\", "\\5c")
+                .Replace("*", "\\2a")
+                .Replace("(", "\\28")
+                .Replace(")", "\\29")
+                .Replace("\0", "\\00");
         }
     }
 }
