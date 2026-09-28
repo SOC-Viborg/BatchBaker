@@ -78,6 +78,42 @@ namespace BatchBaker
             }
         }
 
+        // Flags rows whose Username already exists in the database, or is repeated
+        // more than once within the same file, so duplicates never reach Save.
+        // Sets ImportSuccess/ImportError on each row in place.
+        public static void ValidateForDuplicateUsernames(IEnumerable<People> people, IEnumerable<string> existingUsernames)
+        {
+            var existing = new HashSet<string>(existingUsernames, StringComparer.OrdinalIgnoreCase);
+            var list = people.ToList();
+
+            var occurrences = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var person in list)
+            {
+                string username = person.Username ?? string.Empty;
+                occurrences[username] = occurrences.GetValueOrDefault(username) + 1;
+            }
+
+            foreach (var person in list)
+            {
+                string username = person.Username ?? string.Empty;
+                if (existing.Contains(username))
+                {
+                    person.ImportSuccess = false;
+                    person.ImportError = "Username already exists in the database";
+                }
+                else if (occurrences[username] > 1)
+                {
+                    person.ImportSuccess = false;
+                    person.ImportError = "Duplicate username within this file";
+                }
+                else
+                {
+                    person.ImportSuccess = true;
+                    person.ImportError = string.Empty;
+                }
+            }
+        }
+
         // Danish display labels for UI
         public static readonly Dictionary<string, string> DanishLabels = new()
         {

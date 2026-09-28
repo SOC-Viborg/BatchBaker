@@ -1,0 +1,38 @@
+<Window x:Class="BatchBaker.ImportPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BatchBaker"
+        Title="Review Import" Height="500" Width="900"
+        WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <local:BoolToStatusConverter x:Key="BoolToStatusConverter"/>
+    </Window.Resources>
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="SummaryText" Grid.Row="0" Margin="0,0,0,10" FontWeight="Bold" TextWrapping="Wrap"/>
+
+        <ListView x:Name="PreviewListView" Grid.Row="1">
+            <ListView.  View>
+                <GridView>
+                    <GridViewColumn Header="Status" Width="70" DisplayMemberBinding="{Binding ImportSuccess, Converter={StaticResource BoolToStatusConverter}}"/>
+                    <GridViewColumn Header="Fornavn" Width="100" DisplayMemberBinding="{Binding FirstName}"/>
+                    <GridViewColumn Header="Efternavn" Width="120" DisplayMemberBinding="{Binding LastName}"/>
+                    <GridViewColumn Header="Brugernavn" Width="100" DisplayMemberBinding="{Binding Username}"/>
+                    <GridViewColumn Header="Email" Width="180" DisplayMemberBinding="{Binding Email}"/>
+                    <GridViewColumn Header="Afdeling" Width="100" DisplayMemberBinding="{Binding Department}"/>
+                    <GridViewColumn Header="Reason" Width="200" DisplayMemberBinding="{Binding ImportError}"/>
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button x:Name="ImportButton" Content="Import Valid Rows" Width="150" Height="28" Margin="0,0,10,0" Click="ImportButton_Click"/>
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" Height="28" Click="CancelButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

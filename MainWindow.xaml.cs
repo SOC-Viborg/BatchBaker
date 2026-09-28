@@ -43,72 +43,44 @@ namespace BatchBaker
 
         private void OnSaveClicked(object sender, RoutedEventArgs e)
         {
-            var people = ListViewPeople.ItemsSource as IEnumerable<People>;
-            if (people == null || !people.Any())
+            var people = (ListViewPeople.ItemsSource as IEnumerable<People>)?.ToList();
+            if (people == null || people.Count == 0)
             {
                 MessageBox.Show("No records loaded to save. Import a CSV file first.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            foreach (var person in people)
+            // Re-checked here (not just at Import) because the grid can also be
+            // pre-populated from the last saved import set on startup, so a stale
+            // batch shouldn't be able to re-save itself as duplicates.
+            var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
+            MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+
+            var validPeople = people.Where(p => p.ImportSuccess).ToList();
+            int skipped = people.Count - validPeople.Count;
+
+            if (validPeople.Count == 0)
             {
-                Console.WriteLine($"Saving Person: {person.FirstName} {person.LastName}, Username: {person.Username}, Email: {person.Email}");
-            }
-
-            //try
-            //{
-            //    var repository = new PersonRepository();
-            //    int count = repository.SaveAll(people);
-            //    ListViewPeople.ItemsSource = repository.LoadAll();
-            //    MessageBox.Show($"Successfully saved {count} record(s) to the database.", "Save Successful", MessageBoxButton.OK, MessageBoxImage.Information);
-            //}
-            //catch (Exception ex)
-            //{
-            //    MessageBox.Show($"Error saving to database: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            //}
-
-            var import = new ImportSet { ImportDate = DateTime.Now, RecordCount = people.Count() };
-            dbContext.ImportSets.Add(import);
-            dbContext.SaveChanges();
-            import.People.AddRange(people);
-            dbContext.SaveChanges();
-        }
-
-        private void OnDeleteClicked(object sender, RoutedEventArgs e)
-        {
-            var selected = ListViewPeople.SelectedItems.Cast<Person>().ToList();
-            if (selected.Count == 0)
-            {
-                MessageBox.Show("Select one or more users in the list before deleting.", "Nothing Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var confirmation = MessageBox.Show(
-                $"Delete {selected.Count} selected user(s)? This cannot be undone.",
-                "Confirm Delete",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (confirmation != MessageBoxResult.Yes)
-            {
+                MessageBox.Show("Nothing was saved — every record's username already exists in the database.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             try
             {
-                var repository = new PersonRepository();
-                var idsToDelete = selected.Where(p => p.Id.HasValue).Select(p => p.Id!.Value).ToList();
-                if (idsToDelete.Count > 0)
-                {
-                    repository.Delete(idsToDelete);
-                }
+                var import = new ImportSet { ImportDate = DateTime.Now, RecordCount = validPeople.Count };
+                dbContext.ImportSets.Add(import);
+                dbContext.SaveChanges();
+                import.People.AddRange(validPeople);
+                dbContext.SaveChanges();
 
-                ListViewPeople.ItemsSource = repository.LoadAll();
-                MessageBox.Show($"Deleted {selected.Count} user(s).", "Delete Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                string message = skipped > 0
+                    ? $"Saved {validPeople.Count} record(s). Skipped {skipped} duplicate(s)."
+                    : $"Successfully saved {validPeople.Count} record(s) to the database.";
+                MessageBox.Show(message, "Save Successful", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error deleting user(s): {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error saving to database: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -131,9 +103,20 @@ namespace BatchBaker
                 try
                 {
                     string filePath = openFileDialog.FileName;
-                    var people = MainWindowHelpers.ReadCSV(filePath);
-                    ListViewPeople.ItemsSource = people;
-                    MessageBox.Show($"Successfully loaded {people.Count()} records from the CSV file.", "Import Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                    var people = MainWindowHelpers.ReadCSV(filePath).ToList();
+                    var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
+                    MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+
+                    var previewWindow = new ImportPreviewWindow(people) { Owner = this };
+                    if (previewWindow.ShowDialog() == true)
+                    {
+                        ListViewPeople.ItemsSource = previewWindow.ValidPeople;
+                        int skipped = people.Count - previewWindow.ValidPeople.Count;
+                        string message = skipped > 0
+                            ? $"Imported {previewWindow.ValidPeople.Count} record(s). Skipped {skipped} duplicate(s)."
+                            : $"Successfully imported {previewWindow.ValidPeople.Count} record(s).";
+                        MessageBox.Show(message, "Import Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                 }
                 catch (Exception ex)
                 {

@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:BatchBaker"
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800">
+    <Canvas x:Name="canvasRoot" Background="White">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" MinHeight="55"/>
@@ -23,7 +24,6 @@
                 <MenuItem Header="Permissions"/>
                 <MenuItem Header="Status"/>
             </MenuItem>
-            <MenuItem Header="Delete" Click="OnDeleteClicked"/>
             <MenuItem Header="Help">
                 <MenuItem Header="_About"/>
             </MenuItem>
@@ -101,4 +101,5 @@
             </ListView.View>
         </ListView>
     </Grid>
+</Canvas>
 </Window>

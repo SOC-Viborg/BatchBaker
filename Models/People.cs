@@ -15,7 +15,9 @@ namespace BatchBaker.Models
         public string Country { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
-        public string TemporaryPassword { get; set; } = string.Empty;
+        public string TemporaryPassword { get; set; } = string.Empty; 
+        public bool ImportSuccess { get; set; } = false;
+        public string ImportError { get; set; } = string.Empty;
 
         public int ImportSetId { get; set; }
         [NotMapped]
