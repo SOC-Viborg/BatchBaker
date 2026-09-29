@@ -12,7 +12,12 @@ namespace BatchBaker.Data
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            string path = Path.Combine(AppContext.BaseDirectory, "batchbaker1.db");
+            var datapath = Path.Combine(AppContext.BaseDirectory, "data");
+            if (!Directory.Exists(datapath))
+            {
+                Directory.CreateDirectory(datapath);
+            }
+            string path = Path.Combine(datapath, "batchbaker.db");
             var connectionString = $"Data Source={path}";
             optionsBuilder.UseSqlite(connectionString, options => { 
                 options.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName);

@@ -1,14 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
+using BatchBaker.Configuration;
 using BatchBaker.Data;
 using BatchBaker.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Microsoft.Win32;
 
 namespace BatchBaker
@@ -19,10 +24,38 @@ namespace BatchBaker
     public partial class MainWindow : Window
     {
         public AppDbContext dbContext = new AppDbContext();
-        public MainWindow()
+        private readonly ADDepartments departments;
+        private readonly ADService adService;
+        public MainWindow(IOptions<ADDepartments> departmentsOptions, ADService adService)
         {
             InitializeComponent();
+            departments = departmentsOptions.Value;
+            this.adService = adService;
 
+            PropertyInfo[] properties = typeof(ADDepartments).GetProperties();
+            foreach (PropertyInfo property in properties)
+            {
+                string propertyName = property.Name;
+                string propertyValue = property.GetValue(departments)?.ToString() ?? "null";
+                Console.WriteLine($"{propertyName}: {propertyValue}");
+                
+                var exists = adService.DoesOuExist(propertyValue);
+                if (!exists)
+                {
+                    MessageBox.Show("The OU does not exist in Active Directory: " + propertyValue, "OU Existence Check", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                // MessageBox.Show($"OU '{propertyName}' with DN '{propertyValue}' exists: {exists}", "OU Existence Check", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
+            //var programmersOuexists = adService.DoesOuExist(departments.Data_Programmers);
+            //var infrastructureOuexists = adService.DoesOuExist(departments.Data_Infrastructure);
+            //var itSupportOuexists = adService.DoesOuExist(departments.Data_ITSupport);
+
+
+
+            //var test = configuration["ActiveDirectory:Departments:Data_Programmers"];
+            //MessageBox.Show(departments.Business_Marketing);
             //try
             //{
             //    var repository = new PersonRepository();
@@ -128,6 +161,18 @@ namespace BatchBaker
                     var people = MainWindowHelpers.ReadCSV(filePath).ToList();
                     var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
                     MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+
+                    //foreach (var person in people)
+                    //{
+                    //    if (adService.TryValidateDepartment(person.Department, out string ou))
+                    //    {
+                    //        MessageBox.Show($"Department '{person.Department}' is valid and maps to OU '{ou}'.", "Department Validation", MessageBoxButton.OK, MessageBoxImage.Information);
+                    //    }
+                    //    else
+                    //    {
+                    //        MessageBox.Show($"Department '{person.Department}' is invalid or does not map to a known OU.", "Department Validation", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    //    }
+                    //}
 
                     var previewWindow = new ImportPreviewWindow(people) { Owner = this };
                     if (previewWindow.ShowDialog() == true)
