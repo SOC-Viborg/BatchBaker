@@ -43,7 +43,7 @@ namespace BatchBaker
                 var exists = adService.DoesOuExist(propertyValue);
                 if (!exists)
                 {
-                    MessageBox.Show("The OU does not exist in Active Directory: " + propertyValue, "OU Existence Check", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("OU'en findes ikke i Active Directory: " + propertyValue, "Kontrol af OU", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
                 // MessageBox.Show($"OU '{propertyName}' with DN '{propertyValue}' exists: {exists}", "OU Existence Check", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -68,7 +68,7 @@ namespace BatchBaker
             //    MessageBox.Show($"Error loading saved users: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             //}
             DatabaseInitializer.EnsureSchema(dbContext);
-            LogAction("Application Started", string.Empty);
+            LogAction("Program startet", string.Empty);
             var import = dbContext.ImportSets.Include(i => i.People).OrderByDescending(i => i.ImportDate).FirstOrDefault();
             if (import != null)
             {
@@ -101,7 +101,7 @@ namespace BatchBaker
             var people = (ListViewPeople.ItemsSource as IEnumerable<People>)?.ToList();
             if (people == null || people.Count == 0)
             {
-                MessageBox.Show("No records loaded to save. Import a CSV file first.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Der er ingen poster at gemme. Importér en CSV-fil først.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
@@ -112,13 +112,13 @@ namespace BatchBaker
 
             if (validPeople.Count == 0)
             {
-                MessageBox.Show("Nothing was saved — every record's username already exists in the database.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Intet blev gemt — alle brugernavne findes allerede i databasen.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            LogAction("Save", $"{validPeople.Count} valid record(s), {skipped} skipped as duplicate(s).");
+            LogAction("Gem", $"{validPeople.Count} gyldige post(er), {skipped} sprunget over som dublet(ter).");
 
-            var SavetoAD = MessageBox.Show("Do you want to save the valid records to Active Directory as well?", "Save to Active Directory", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var SavetoAD = MessageBox.Show("Vil du også gemme de gyldige poster i Active Directory?", "Gem i Active Directory", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (SavetoAD == MessageBoxResult.Yes)
             {
                 SaveUsersToActiveDirectory(validPeople);
@@ -130,15 +130,15 @@ namespace BatchBaker
         // is written to the activity log and the grid's Status/Reason columns.
         private void SaveUsersToActiveDirectory(List<People> people)
         {
-            LogAction("AD Save Started", $"{people.Count} user(s), domain '{activeDirectory.Domain}'.");
+            LogAction("AD-oprettelse startet", $"{people.Count} bruger(e), domæne '{activeDirectory.Domain}'.");
 
             foreach (var person in people)
             {
                 if (!adService.TryValidateDepartment(person.Department, out string ou))
                 {
                     person.ImportSuccess = false;
-                    person.ImportError = $"No OU matches department '{person.Department}'";
-                    LogAction("AD User Skipped", $"{person.Username}: {person.ImportError}.");
+                    person.ImportError = $"Ingen OU matcher afdelingen '{person.Department}'";
+                    LogAction("AD-bruger sprunget over", $"{person.Username}: {person.ImportError}.");
                     continue;
                 }
 
@@ -163,7 +163,7 @@ namespace BatchBaker
 
                     person.ImportSuccess = true;
                     person.ImportError = string.Empty;
-                    LogAction("AD User Created", $"{person.Username} in {ou}.");
+                    LogAction("AD-bruger oprettet", $"{person.Username} i {ou}.");
 
                     // The account exists at this point, so a failure here is reported
                     // separately rather than marking the whole user as failed.
@@ -173,8 +173,8 @@ namespace BatchBaker
                     }
                     catch (Exception ex)
                     {
-                        person.ImportError = $"Created, but department/country not set: {ex.Message}";
-                        LogAction("AD Attributes Failed", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
+                        person.ImportError = $"Oprettet, men afdeling/land blev ikke sat: {ex.Message}";
+                        LogAction("AD-attributter fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
                 catch (Exception ex)
@@ -184,18 +184,18 @@ namespace BatchBaker
                         : $"{ex.GetType().Name}: {ex.Message} ({ex.InnerException.Message})";
                     person.ImportSuccess = false;
                     person.ImportError = reason;
-                    LogAction("AD User Failed", $"{person.Username} in {ou}: {reason}");
+                    LogAction("AD-bruger fejlede", $"{person.Username} i {ou}: {reason}");
                 }
             }
 
             int created = people.Count(p => p.ImportSuccess);
             int failed = people.Count - created;
-            LogAction("AD Save Finished", $"{created} created, {failed} failed or skipped.");
+            LogAction("AD-oprettelse afsluttet", $"{created} oprettet, {failed} fejlede eller sprunget over.");
 
             ListViewPeople.Items.Refresh();
             string summary = failed == 0
-                ? $"Created {created} user(s) in Active Directory."
-                : $"Created {created} user(s). {failed} failed or were skipped. See the Reason column, or Help > Logs for details.";
+                ? $"Oprettede {created} bruger(e) i Active Directory."
+                : $"Oprettede {created} bruger(e). {failed} fejlede eller blev sprunget over. Se kolonnen Årsag eller Hjælp > Log for detaljer.";
             MessageBox.Show(summary, "Active Directory", MessageBoxButton.OK, failed == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
 
@@ -318,7 +318,7 @@ namespace BatchBaker
         {
             OpenFileDialog openFileDialog = new OpenFileDialog
             {
-                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                Filter = "CSV-filer (*.csv)|*.csv|Alle filer (*.*)|*.*",
                 FilterIndex = 1,
                 RestoreDirectory = true
             };
@@ -350,20 +350,20 @@ namespace BatchBaker
                         ListViewPeople.ItemsSource = previewWindow.ValidPeople;
                         int skipped = people.Count - previewWindow.ValidPeople.Count;
                         string message = skipped > 0
-                            ? $"Imported {previewWindow.ValidPeople.Count} record(s). Skipped {skipped} duplicate(s)."
-                            : $"Successfully imported {previewWindow.ValidPeople.Count} record(s).";
-                        MessageBox.Show(message, "Import Successful", MessageBoxButton.OK, MessageBoxImage.Information);
-                        LogAction("Import", $"{System.IO.Path.GetFileName(filePath)}: {previewWindow.ValidPeople.Count} record(s) imported, {skipped} skipped.");
+                            ? $"Importerede {previewWindow.ValidPeople.Count} post(er). {skipped} dublet(ter) sprunget over."
+                            : $"{previewWindow.ValidPeople.Count} post(er) blev importeret.";
+                        MessageBox.Show(message, "Import gennemført", MessageBoxButton.OK, MessageBoxImage.Information);
+                        LogAction("Import", $"{System.IO.Path.GetFileName(filePath)}: {previewWindow.ValidPeople.Count} post(er) importeret, {skipped} sprunget over.");
                     }
                     else
                     {
-                        LogAction("Import Cancelled", System.IO.Path.GetFileName(filePath));
+                        LogAction("Import annulleret", System.IO.Path.GetFileName(filePath));
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error loading CSV file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    LogAction("Import Failed", ex.Message);
+                    MessageBox.Show($"Fejl ved indlæsning af CSV-fil: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+                    LogAction("Import fejlede", ex.Message);
                 }
             }
         }

@@ -24,6 +24,9 @@ namespace BatchBaker
             base.OnStartup(e);
             try
             {
+                // QuestPDF refuses to generate anything until a license type is set.
+                QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
                 // Content root is the exe's folder, so appsettings.json is found
                 // no matter which directory the app is launched from.
                 _host = Host.CreateDefaultBuilder()
@@ -43,7 +46,7 @@ namespace BatchBaker
             }
             catch (Exception ex)
             {
-                ReportError("BatchBaker could not start", ex);
+                ReportError("BatchBaker kunne ikke starte", ex);
                 Shutdown(1);
             }
         }
@@ -64,7 +67,7 @@ namespace BatchBaker
         // handler) so they're shown and recorded instead of closing the app silently.
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
-            ReportError("An unexpected error occurred", e.Exception);
+            ReportError("Der opstod en uventet fejl", e.Exception);
             e.Handled = true;
         }
 
@@ -81,10 +84,10 @@ namespace BatchBaker
             catch
             {
                 logPath = Path.Combine(Path.GetTempPath(), "BatchBaker-crash.log");
-                try { File.AppendAllText(logPath, details); } catch { logPath = "(could not be written)"; }
+                try { File.AppendAllText(logPath, details); } catch { logPath = "(kunne ikke skrives)"; }
             }
 
-            MessageBox.Show($"{ex.GetType().Name}: {ex.Message}{Environment.NewLine}{Environment.NewLine}Full details: {logPath}",
+            MessageBox.Show($"{ex.GetType().Name}: {ex.Message}{Environment.NewLine}{Environment.NewLine}Alle detaljer: {logPath}",
                 title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

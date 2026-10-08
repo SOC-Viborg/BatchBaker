@@ -20,7 +20,7 @@ namespace BatchBaker.Configuration
         [CSVValue(ColumnName = "IT Support")]
         public string Data_ITSupport { get; set; } = default!;
 
-        [CSVValue(ColumnName = "Cyber SeScurity")]
+        [CSVValue(ColumnName = "Cyber Security")]
         public string Data_CyberSecurity { get; set; } = default!;
 
         [CSVValue(ColumnName = "Administration")]

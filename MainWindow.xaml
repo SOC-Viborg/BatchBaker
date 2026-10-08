@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:BatchBaker"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="BatchBaker" Height="450" Width="800">
     <Window.Resources>
         <local:BoolToStatusConverter x:Key="BoolToStatusConverter"/>
     </Window.Resources>
@@ -16,76 +16,76 @@
             <RowDefinition/>
         </Grid.RowDefinitions>
         <Menu Margin="0,0,0,27">
-            <MenuItem Header="File">
-                <MenuItem Header="_Import" Click="ImportCSV_Click"/>
-                    <MenuItem Header="_Save" Click="OnSaveClicked"/>
-                    <MenuItem Header="_Exit" Click="OnExitClicked"/>
+            <MenuItem Header="_Filer">
+                <MenuItem Header="_Importér" Click="ImportCSV_Click"/>
+                    <MenuItem Header="_Gem" Click="OnSaveClicked"/>
+                    <MenuItem Header="_Afslut" Click="OnExitClicked"/>
             </MenuItem>
-            <MenuItem Header="Manage">
-                <MenuItem Header="Users"/>
-                <MenuItem Header="Roles"/>
-                <MenuItem Header="Permissions"/>
+            <MenuItem Header="_Administrér">
+                <MenuItem Header="Brugere"/>
+                <MenuItem Header="Roller"/>
+                <MenuItem Header="Rettigheder"/>
                 <MenuItem Header="Status"/>
             </MenuItem>
-            <MenuItem Header="Help">
-                <MenuItem Header="_About"/>
-                <MenuItem Header="_Logs" Click="OnViewLogsClicked"/>
+            <MenuItem Header="_Hjælp">
+                <MenuItem Header="_Om"/>
+                <MenuItem Header="_Log" Click="OnViewLogsClicked"/>
             </MenuItem>
         </Menu>
         <TreeView Name="myTreeViewEvent" Margin="0,28,689,0" Grid.RowSpan="2" >
             <TreeViewItem Header="It-Support" IsSelected="True">
                 <TreeViewItem Header="Jesper Aaberg"/>
-                <TreeViewItem Header="Employee Number">
+                <TreeViewItem Header="Medarbejdernummer">
                     <TreeViewItem Header="12345"/>
                 </TreeViewItem>
-                <TreeViewItem Header="Work Days">
-                    <TreeViewItem Header="Monday"/>
-                    <TreeViewItem Header="Tuesday"/>
-                    <TreeViewItem Header="Thursday"/>
+                <TreeViewItem Header="Arbejdsdage">
+                    <TreeViewItem Header="Mandag"/>
+                    <TreeViewItem Header="Tirsdag"/>
+                    <TreeViewItem Header="Torsdag"/>
                 </TreeViewItem>
             </TreeViewItem>
             <TreeViewItem Header="Programmør">
                 <TreeViewItem Header="Dominik Paiha"/>
-                <TreeViewItem Header="Employee Number">
+                <TreeViewItem Header="Medarbejdernummer">
                     <TreeViewItem Header="98765"/>
                 </TreeViewItem>
-                <TreeViewItem Header="Work Days">
-                    <TreeViewItem Header="Tuesday"/>
-                    <TreeViewItem Header="Wednesday"/>
-                    <TreeViewItem Header="Friday"/>
+                <TreeViewItem Header="Arbejdsdage">
+                    <TreeViewItem Header="Tirsdag"/>
+                    <TreeViewItem Header="Onsdag"/>
+                    <TreeViewItem Header="Fredag"/>
                 </TreeViewItem>
             </TreeViewItem>
             <TreeViewItem Header="Infrastruktur">
                 <TreeViewItem Header="Dominik Paiha"/>
-                <TreeViewItem Header="Employee Number">
+                <TreeViewItem Header="Medarbejdernummer">
                     <TreeViewItem Header="98765"/>
                 </TreeViewItem>
-                <TreeViewItem Header="Work Days">
-                    <TreeViewItem Header="Tuesday"/>
-                    <TreeViewItem Header="Wednesday"/>
-                    <TreeViewItem Header="Friday"/>
+                <TreeViewItem Header="Arbejdsdage">
+                    <TreeViewItem Header="Tirsdag"/>
+                    <TreeViewItem Header="Onsdag"/>
+                    <TreeViewItem Header="Fredag"/>
                 </TreeViewItem>
             </TreeViewItem>
             <TreeViewItem Header="Business">
                 <TreeViewItem Header="Dominik Paiha"/>
-                <TreeViewItem Header="Employee Number">
+                <TreeViewItem Header="Medarbejdernummer">
                     <TreeViewItem Header="98765"/>
                 </TreeViewItem>
-                <TreeViewItem Header="Work Days">
-                    <TreeViewItem Header="Tuesday"/>
-                    <TreeViewItem Header="Wednesday"/>
-                    <TreeViewItem Header="Friday"/>
+                <TreeViewItem Header="Arbejdsdage">
+                    <TreeViewItem Header="Tirsdag"/>
+                    <TreeViewItem Header="Onsdag"/>
+                    <TreeViewItem Header="Fredag"/>
                 </TreeViewItem>
             </TreeViewItem>
             <TreeViewItem Header="Energi">
                 <TreeViewItem Header="Dominik Paiha"/>
-                <TreeViewItem Header="Employee Number">
+                <TreeViewItem Header="Medarbejdernummer">
                     <TreeViewItem Header="98765"/>
                 </TreeViewItem>
-                <TreeViewItem Header="Work Days">
-                    <TreeViewItem Header="Tuesday"/>
-                    <TreeViewItem Header="Wednesday"/>
-                    <TreeViewItem Header="Friday"/>
+                <TreeViewItem Header="Arbejdsdage">
+                    <TreeViewItem Header="Tirsdag"/>
+                    <TreeViewItem Header="Onsdag"/>
+                    <TreeViewItem Header="Fredag"/>
                 </TreeViewItem>
             </TreeViewItem>
         </TreeView>
@@ -93,15 +93,15 @@
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Status" Width="70" DisplayMemberBinding="{Binding Path=ImportSuccess, Converter={StaticResource BoolToStatusConverter}}"/>
-                    <GridViewColumn Header="Reason" Width="180" DisplayMemberBinding="{Binding Path=ImportError}"/>
+                    <GridViewColumn Header="Årsag" Width="180" DisplayMemberBinding="{Binding Path=ImportError}"/>
                     <GridViewColumn Header="Fornavn"  DisplayMemberBinding="{Binding Path=FirstName}"/>
                     <GridViewColumn Header="Efternavn"  DisplayMemberBinding="{Binding Path=LastName}"/>
                     <GridViewColumn Header="Brugernavn"  DisplayMemberBinding="{Binding Path=Username}"/>
-                    <GridViewColumn Header="Email"  DisplayMemberBinding="{Binding Path=Email}"/>
-                    <GridViewColumn Header="Department"  DisplayMemberBinding="{Binding Path=Department}"/>
-                    <GridViewColumn Header="Country"  DisplayMemberBinding="{Binding Path=Country}"/>
-                    <GridViewColumn Header="PhoneNumber" DisplayMemberBinding="{Binding Path=PhoneNumber}"/>
-                    <GridViewColumn Header="TemporaryPassword"  DisplayMemberBinding="{Binding Path=TemporaryPassword}"/>
+                    <GridViewColumn Header="E-mail"  DisplayMemberBinding="{Binding Path=Email}"/>
+                    <GridViewColumn Header="Afdeling"  DisplayMemberBinding="{Binding Path=Department}"/>
+                    <GridViewColumn Header="Land"  DisplayMemberBinding="{Binding Path=Country}"/>
+                    <GridViewColumn Header="Telefonnummer" DisplayMemberBinding="{Binding Path=PhoneNumber}"/>
+                    <GridViewColumn Header="Midlertidig adgangskode"  DisplayMemberBinding="{Binding Path=TemporaryPassword}"/>
                 </GridView>
             </ListView.View>
         </ListView>

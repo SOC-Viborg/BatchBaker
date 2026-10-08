@@ -25,8 +25,8 @@ namespace BatchBaker
             int invalidCount = people.Count - validCount;
 
             SummaryText.Text = invalidCount == 0
-                ? $"{validCount} of {people.Count} row(s) are valid and ready to import."
-                : $"{validCount} of {people.Count} row(s) are valid. {invalidCount} will be skipped due to duplicate usernames.";
+                ? $"{validCount} af {people.Count} række(r) er gyldige og klar til import."
+                : $"{validCount} af {people.Count} række(r) er gyldige. {invalidCount} springes over på grund af dublerede brugernavne.";
 
             PreviewListView.ItemsSource = people;
             ImportButton.IsEnabled = validCount > 0;
