@@ -100,7 +100,6 @@
                     <GridViewColumn Header="Email"  DisplayMemberBinding="{Binding Path=Email}"/>
                     <GridViewColumn Header="Department"  DisplayMemberBinding="{Binding Path=Department}"/>
                     <GridViewColumn Header="Country"  DisplayMemberBinding="{Binding Path=Country}"/>
-                    <GridViewColumn Header="Title"  DisplayMemberBinding="{Binding Path=Title}"/>
                     <GridViewColumn Header="PhoneNumber" DisplayMemberBinding="{Binding Path=PhoneNumber}"/>
                     <GridViewColumn Header="TemporaryPassword"  DisplayMemberBinding="{Binding Path=TemporaryPassword}"/>
                 </GridView>

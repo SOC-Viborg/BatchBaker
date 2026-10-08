@@ -62,7 +62,7 @@ namespace BatchBaker
                         Email = data[3].Trim(),
                         Department = data[4].Trim(),
                         Country = data[5].Trim(),
-                        Title = data[6].Trim(),
+                        // data[6] is the CSV's Titel column, which is no longer used.
                         PhoneNumber = data[7].Trim(),
                         TemporaryPassword = data[8].Trim()
                     };
@@ -123,7 +123,6 @@ namespace BatchBaker
             { nameof(People.Email), "Email" },
             { nameof(People.Department), "Afdeling" },
             { nameof(People.Country), "Land" },
-            { nameof(People.Title), "Titel" },
             { nameof(People.PhoneNumber), "Telefonnummer" },
             { nameof(People.TemporaryPassword), "Midlertidig adgangskode" }
         };
@@ -160,10 +159,6 @@ namespace BatchBaker
                 if (!string.IsNullOrWhiteSpace(person.Department))
                 {
                     newUser.Properties["department"].Value = person.Department;
-                }
-                if (!string.IsNullOrWhiteSpace(person.Title))
-                {
-                    newUser.Properties["title"].Value = person.Title;
                 }
                 if (!string.IsNullOrWhiteSpace(person.Country))
                 {

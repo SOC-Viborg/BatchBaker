@@ -173,7 +173,7 @@ namespace BatchBaker
                     }
                     catch (Exception ex)
                     {
-                        person.ImportError = $"Created, but department/title/country not set: {ex.Message}";
+                        person.ImportError = $"Created, but department/country not set: {ex.Message}";
                         LogAction("AD Attributes Failed", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
@@ -216,7 +216,6 @@ namespace BatchBaker
             }
 
             SetIfPresent("department", person.Department);
-            SetIfPresent("title", person.Title);
             SetIfPresent("co", person.Country);
 
             if (changed)
