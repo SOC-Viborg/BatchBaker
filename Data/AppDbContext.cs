@@ -9,6 +9,7 @@ namespace BatchBaker.Data
     {
         public DbSet<ImportSet> ImportSets { get; set; }
         public DbSet<People> People { get; set; }
+        public DbSet<ActivityLog> ActivityLogs { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {

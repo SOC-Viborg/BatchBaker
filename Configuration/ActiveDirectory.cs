@@ -6,6 +6,8 @@ namespace BatchBaker.Configuration
 {
     public class ActiveDirectory
     {
+        public string Domain { get; set; } = default!;
+        public ADDepartments Departments { get; set; } = default!;
     }
     public class ADDepartments
     {
@@ -18,10 +20,10 @@ namespace BatchBaker.Configuration
         [CSVValue(ColumnName = "IT Support")]
         public string Data_ITSupport { get; set; } = default!;
 
-        [CSVValue(ColumnName = "Cyber Security")]
+        [CSVValue(ColumnName = "Cyber SeScurity")]
         public string Data_CyberSecurity { get; set; } = default!;
 
-        [CSVValue(ColumnName = "Adminstration")]
+        [CSVValue(ColumnName = "Administration")]
         public string Business_Administration { get; set; } = default!;
 
         [CSVValue(ColumnName = "Handel")]

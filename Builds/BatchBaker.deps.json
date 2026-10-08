@@ -9,7 +9,8 @@
       "BatchBaker/1.0.0": {
         "dependencies": {
           "Microsoft.EntityFrameworkCore.Sqlite": "10.0.12",
-          "Microsoft.Extensions.Hosting": "10.0.12"
+          "Microsoft.Extensions.Hosting": "10.0.12",
+          "System.DirectoryServices.AccountManagement": "10.0.12"
         },
         "runtime": {
           "BatchBaker.dll": {}
@@ -626,6 +627,53 @@
             "fileVersion": "2.1.12.3116"
           }
         }
+      },
+      "System.DirectoryServices.AccountManagement/10.0.12": {
+        "dependencies": {
+          "System.DirectoryServices.Protocols": "10.0.12"
+        },
+        "runtime": {
+          "lib/net10.0/System.DirectoryServices.AccountManagement.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net10.0/System.DirectoryServices.AccountManagement.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
+      },
+      "System.DirectoryServices.Protocols/10.0.12": {
+        "runtime": {
+          "lib/net10.0/System.DirectoryServices.Protocols.dll": {
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/linux/lib/net10.0/System.DirectoryServices.Protocols.dll": {
+            "rid": "linux",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          },
+          "runtimes/osx/lib/net10.0/System.DirectoryServices.Protocols.dll": {
+            "rid": "osx",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          },
+          "runtimes/win/lib/net10.0/System.DirectoryServices.Protocols.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.12",
+            "fileVersion": "10.0.1226.42308"
+          }
+        }
       }
     }
   },
@@ -914,6 +962,20 @@
       "sha512": "sha512-W3oH4XIfCzFrgUSDKHhN6N+dgzA5YHOR2VxX8GB6Qy7CyrJJgxPEG8NirgYWlPQC5P2jz2knSsexWu4tDUL33g==",
       "path": "sqlitepclraw.provider.e_sqlite3/2.1.12",
       "hashPath": "sqlitepclraw.provider.e_sqlite3.2.1.12.nupkg.sha512"
+    },
+    "System.DirectoryServices.AccountManagement/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-0gUbKOSOSU5s0rcH4PpDW6MRO0acXj0FRQ082Wt8CqquVLU+Qd/eN3/Ao/d8qk30QB6wrF1F8f+QVGqkcR9LBQ==",
+      "path": "system.directoryservices.accountmanagement/10.0.12",
+      "hashPath": "system.directoryservices.accountmanagement.10.0.12.nupkg.sha512"
+    },
+    "System.DirectoryServices.Protocols/10.0.12": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-L2PHm7ewfjQYgbhBUB+lXiewxoNo+rhn06geWeUJP3qYCDnkL+Qibv6TEPMlMsF/zab4cU2bE8BWTBqzHZYiYg==",
+      "path": "system.directoryservices.protocols/10.0.12",
+      "hashPath": "system.directoryservices.protocols.10.0.12.nupkg.sha512"
     }
   }
 }

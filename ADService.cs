@@ -8,9 +8,9 @@ namespace BatchBaker
     public class ADService
     {
         public ADDepartments departments { get; set; } = default!;
-        public ADService(IOptions<ADDepartments> departmentsOptions)
+        public ADService(IOptions<ActiveDirectory> activeDirectoryOptions)
         {
-            departments = departmentsOptions.Value;
+            departments = activeDirectoryOptions.Value.Departments;
         }
 
         public bool DoesOuExist(string distinguishedName)
