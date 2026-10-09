@@ -16,6 +16,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.Win32;
 using System.DirectoryServices.AccountManagement;
+using BatchBaker.Services;
 
 namespace BatchBaker
 {
@@ -26,12 +27,14 @@ namespace BatchBaker
     {
         public AppDbContext dbContext = new AppDbContext();
         private readonly ActiveDirectory activeDirectory;
-        private readonly ADService adService;
-        public MainWindow(IOptions<ActiveDirectory> activeDirectoryOptions, ADService adService)
+        private readonly ADService adService; 
+        private readonly PDFService pdfService;
+        public MainWindow(IOptions<ActiveDirectory> activeDirectoryOptions, ADService adService, PDFService pdfService)
         {
             InitializeComponent();
             activeDirectory = activeDirectoryOptions.Value;
             this.adService = adService;
+            this.pdfService = pdfService;
 
             PropertyInfo[] properties = typeof(ADDepartments).GetProperties();
             foreach (PropertyInfo property in properties)

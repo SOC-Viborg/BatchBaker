@@ -5,9 +5,6 @@ using System.DirectoryServices;
 using System.IO;
 using System.Linq;
 using System.Text;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
 
 namespace BatchBaker
 {
@@ -21,46 +18,6 @@ namespace BatchBaker
                 .Select(s => s[random.Next(s.Length)]).ToArray());
         }
 
-        // Because the users are recieving a new password, we generate a PDF for them to print when they log on for the first time with their new login.
-        // Returns the path of the written file.
-        public static string GeneratePDF(People person, string outputDirectory)
-        {
-            Directory.CreateDirectory(outputDirectory);
-            string pdfFilePath = Path.Combine(outputDirectory, $"{person.Username}_credentials.pdf");
-
-            Document.Create(container =>
-            {
-                container.Page(page =>
-                {
-                    page.Size(PageSizes.A4);
-                    page.Margin(2, Unit.Centimetre);
-                    page.PageColor(Colors.White);
-                    page.DefaultTextStyle(x => x.FontSize(20));
-                    page.Header()
-                        .Text("Your New Account Credentials")
-                        .SemiBold().FontSize(36).FontColor(Colors.Blue.Medium);
-                    page.Content()
-                        .PaddingVertical(1, Unit.Centimetre)
-                        .Column(x =>
-                        {
-                            x.Spacing(20);
-                            x.Item().Text($"Username: {person.Username}");
-                            x.Item().Text($"Temporary Password: {person.TemporaryPassword}");
-                            x.Item().Text("Please change your password upon first login.");
-                        });
-                    page.Footer()
-                        .AlignCenter()
-                        .Text(x =>
-                        {
-                            x.Span("Page ");
-                            x.CurrentPageNumber();
-                        });
-                });
-            })
-            .GeneratePdf(pdfFilePath);
-
-            return pdfFilePath;
-        }
 
         public static IEnumerable<People> ReadCSV(string filePath)
         {

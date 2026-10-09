@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using System.DirectoryServices;
 using System.Reflection;
 
-namespace BatchBaker
+namespace BatchBaker.Services
 {
     public class ADService
     {

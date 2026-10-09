@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using BatchBaker.Services;
 
 namespace BatchBaker
 {
@@ -37,6 +38,7 @@ namespace BatchBaker
                         services.AddSingleton<MainWindow>();
                         services.AddSingleton<ImportPreviewWindow>();
                         services.AddSingleton<ADService>();
+                        services.AddSingleton<PDFService>();
                     })
                     .Build();
 
