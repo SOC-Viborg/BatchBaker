@@ -12,18 +12,22 @@ namespace BatchBaker.Services
     {
         private readonly string _filePath;
 
+        public string OutputFolder => _filePath;
+
         public PDFService(IOptions<PDFSettings> pdfSettings)
         {
             _filePath = Environment.ExpandEnvironmentVariables(pdfSettings.Value.FilePath);
         }
-        
+
         public string GeneratePDF(People person)
         {
             if (!Directory.Exists(_filePath))
             {
                 Directory.CreateDirectory(_filePath);
             }
-            string pdfFilePath = Path.Combine(_filePath, $"{person.Username}_credentials.pdf");
+            // Usernames come from the CSV, so strip anything Windows won't allow in a filename.
+            string safeName = string.Concat(person.Username.Split(Path.GetInvalidFileNameChars()));
+            string pdfFilePath = Path.Combine(_filePath, $"{safeName}_credentials.pdf");
 
             Document.Create(container =>
             {

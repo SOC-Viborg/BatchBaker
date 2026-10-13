@@ -18,6 +18,7 @@
         <Menu Margin="0,0,0,27">
             <MenuItem Header="_Filer">
                 <MenuItem Header="_Importér" Click="ImportCSV_Click"/>
+                    <MenuItem Header="_Tilføj bruger" Click="OnAddPersonClicked"/>
                     <MenuItem Header="_Gem" Click="OnSaveClicked"/>
                     <MenuItem Header="_Afslut" Click="OnExitClicked"/>
             </MenuItem>
@@ -89,7 +90,7 @@
                 </TreeViewItem>
             </TreeViewItem>
         </TreeView>
-        <ListView x:Name="ListViewPeople" Margin="109,28,2,0" Grid.RowSpan="2">
+        <ListView x:Name="ListViewPeople" Margin="109,28,2,0" Grid.RowSpan="2" MouseDoubleClick="ListViewPeople_MouseDoubleClick">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Status" Width="70" DisplayMemberBinding="{Binding Path=ImportSuccess, Converter={StaticResource BoolToStatusConverter}}"/>

@@ -134,6 +134,7 @@ namespace BatchBaker
         private void SaveUsersToActiveDirectory(List<People> people)
         {
             LogAction("AD-oprettelse startet", $"{people.Count} bruger(e), domæne '{activeDirectory.Domain}'.");
+            int pdfCount = 0;
 
             foreach (var person in people)
             {
@@ -179,6 +180,21 @@ namespace BatchBaker
                         person.ImportError = $"Oprettet, men afdeling/land blev ikke sat: {ex.Message}";
                         LogAction("AD-attributter fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
                     }
+
+                    // Same here: the account is already created, so a PDF failure is only noted.
+                    try
+                    {
+                        string pdfPath = pdfService.GeneratePDF(person);
+                        pdfCount++;
+                        LogAction("PDF oprettet", $"{person.Username}: {pdfPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        person.ImportError = string.IsNullOrEmpty(person.ImportError)
+                            ? $"Oprettet, men PDF fejlede: {ex.Message}"
+                            : $"{person.ImportError}; PDF fejlede: {ex.Message}";
+                        LogAction("PDF fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -199,6 +215,10 @@ namespace BatchBaker
             string summary = failed == 0
                 ? $"Oprettede {created} bruger(e) i Active Directory."
                 : $"Oprettede {created} bruger(e). {failed} fejlede eller blev sprunget over. Se kolonnen Årsag eller Hjælp > Log for detaljer.";
+            if (pdfCount > 0)
+            {
+                summary += $"{Environment.NewLine}{Environment.NewLine}{pdfCount} PDF(er) gemt i {pdfService.OutputFolder}";
+            }
             MessageBox.Show(summary, "Active Directory", MessageBoxButton.OK, failed == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
 
@@ -312,6 +332,52 @@ namespace BatchBaker
         //     ListViewPeople.Items.Refresh();
         // }
 
+        // Adds a single person by hand, for when one new user doesn't warrant a CSV.
+        private void OnAddPersonClicked(object sender, RoutedEventArgs e)
+        {
+            var person = new People();
+            var editor = new Editor(person, adService, isNew: true) { Owner = this };
+            if (editor.ShowDialog() != true)
+            {
+                return;
+            }
+
+            if (ListViewPeople.ItemsSource is not List<People> people)
+            {
+                people = new List<People>();
+                ListViewPeople.ItemsSource = people;
+            }
+            people.Add(person);
+            RevalidateGrid(people);
+            LogAction("Bruger tilføjet", person.Username);
+        }
+
+        // Opens the clicked row in the editor, e.g. to fix a rejected row in place.
+        private void ListViewPeople_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (ListViewPeople.SelectedItem is not People person || ListViewPeople.ItemsSource is not List<People> people)
+            {
+                return;
+            }
+
+            var editor = new Editor(person, adService, isNew: false) { Owner = this };
+            if (editor.ShowDialog() == true)
+            {
+                RevalidateGrid(people);
+                LogAction("Bruger redigeret", person.Username);
+            }
+        }
+
+        // Re-runs the same checks as import, so an edited or added row shows
+        // whether it's now valid.
+        private void RevalidateGrid(List<People> people)
+        {
+            var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
+            MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+            MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
+            ListViewPeople.Items.Refresh();
+        }
+
         private void OnExitClicked(object sender, RoutedEventArgs e)
         {
             Application.Current.Shutdown();
@@ -334,6 +400,7 @@ namespace BatchBaker
                     var people = MainWindowHelpers.ReadCSV(filePath).ToList();
                     var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
                     MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+                    MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
 
                     //foreach (var person in people)
                     //{
@@ -347,13 +414,13 @@ namespace BatchBaker
                     //    }
                     //}
 
-                    var previewWindow = new ImportPreviewWindow(people) { Owner = this };
+                    var previewWindow = new ImportPreviewWindow(people, existingUsernames, adService) { Owner = this };
                     if (previewWindow.ShowDialog() == true)
                     {
                         ListViewPeople.ItemsSource = previewWindow.ValidPeople;
                         int skipped = people.Count - previewWindow.ValidPeople.Count;
                         string message = skipped > 0
-                            ? $"Importerede {previewWindow.ValidPeople.Count} post(er). {skipped} dublet(ter) sprunget over."
+                            ? $"Importerede {previewWindow.ValidPeople.Count} post(er). {skipped} ugyldige sprunget over."
                             : $"{previewWindow.ValidPeople.Count} post(er) blev importeret.";
                         MessageBox.Show(message, "Import gennemført", MessageBoxButton.OK, MessageBoxImage.Information);
                         LogAction("Import", $"{System.IO.Path.GetFileName(filePath)}: {previewWindow.ValidPeople.Count} post(er) importeret, {skipped} sprunget over.");

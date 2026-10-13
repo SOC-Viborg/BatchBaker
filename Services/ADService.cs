@@ -38,15 +38,28 @@ namespace BatchBaker.Services
 #endif
         }
 
+        // The department names a CSV (or the editor's dropdown) may use, in config order.
+        public List<string> DepartmentNames => typeof(ADDepartments).GetProperties()
+            .Select(p => p.GetCustomAttribute<CSVValueAttribute>()?.ColumnName)
+            .OfType<string>()
+            .ToList();
+
+        // Returns the official spelling of a department name, or null if it matches none.
+        public string? MatchDepartment(string name)
+        {
+            string formattedName = NormalizeDepartment(name);
+            return DepartmentNames.FirstOrDefault(d => d.Equals(formattedName, StringComparison.CurrentCultureIgnoreCase));
+        }
+
+        private static string NormalizeDepartment(string name)
+            => (name ?? string.Empty).Replace('_', ' ').Replace('-', ' ').Trim();
+
         public bool TryValidateDepartment(string name, out string Ou)
         {
             PropertyInfo[] properties = typeof(ADDepartments).GetProperties();
-            foreach (PropertyInfo property in properties) 
-            { 
-                var formattedName = name
-                    .Replace('_', ' ')
-                    .Replace('-', ' ')
-                    .Trim();
+            foreach (PropertyInfo property in properties)
+            {
+                var formattedName = NormalizeDepartment(name);
 
                 var att = property.GetCustomAttribute<CSVValueAttribute>();
                 if (att != null && att.ColumnName.Equals(formattedName, StringComparison.CurrentCultureIgnoreCase))

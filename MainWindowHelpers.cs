@@ -130,6 +130,21 @@ namespace BatchBaker
             }
         }
 
+        // Flags rows whose Department doesn't map to a known OU, so a misspelling is
+        // caught at import instead of failing later in Active Directory. Run after
+        // ValidateForDuplicateUsernames so a duplicate's reason isn't overwritten.
+        public static void ValidateDepartments(IEnumerable<People> people, Func<string, bool> isKnownDepartment)
+        {
+            foreach (var person in people.Where(p => p.ImportSuccess))
+            {
+                if (!isKnownDepartment(person.Department))
+                {
+                    person.ImportSuccess = false;
+                    person.ImportError = $"Ukendt afdeling '{person.Department}'";
+                }
+            }
+        }
+
         // Danish display labels for UI
         public static readonly Dictionary<string, string> DanishLabels = new()
         {
