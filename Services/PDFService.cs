@@ -51,7 +51,7 @@ namespace BatchBaker.Services
                         .PaddingVertical(1, Unit.Centimetre)
                         .Column(x =>
                         {
-                            x.item().Text($"Kære {person.FirstName} din nye konto er nu oprettet. Her er dine loginoplysninger:");
+                            x.Item().Text($"Kære {person.FirstName} din nye konto er nu oprettet. Her er dine loginoplysninger:");
                             x.Spacing(20);
                             x.Item().Text($"Username: {person.Username}");
                             x.Item().Text($"Temporary Password: {person.TemporaryPassword}");
