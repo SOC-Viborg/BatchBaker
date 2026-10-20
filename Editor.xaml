@@ -58,7 +58,10 @@
         <TextBox x:Name="PhoneBox" Grid.Row="7" Grid.Column="1"/>
 
         <Label Grid.Row="8" Content="Midlertidig adgangskode *"/>
-        <TextBox x:Name="PasswordBox" Grid.Row="8" Grid.Column="1"/>
+        <DockPanel Grid.Row="8" Grid.Column="1">
+            <Button DockPanel.Dock="Right" Content="Generér" Width="70" Margin="6,0,0,6" Click="GeneratePasswordButton_Click"/>
+            <TextBox x:Name="PasswordBox"/>
+        </DockPanel>
 
         <TextBlock x:Name="ValidationText" Grid.Row="9" Grid.ColumnSpan="2" Margin="0,4,0,0"
                    Foreground="#B00020" TextWrapping="Wrap" Visibility="Collapsed"/>

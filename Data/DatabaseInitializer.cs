@@ -45,6 +45,15 @@ namespace BatchBaker.Data
                             Execute(connection, BuildAddColumn(table.Name, column));
                         }
                     }
+
+                    // A removed property's column is normally left alone, but one that's
+                    // NOT NULL without a default makes every insert fail (e.g. the old
+                    // People.Title), since EF no longer supplies a value for it.
+                    var modelColumns = new HashSet<string>(table.Columns.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
+                    foreach (string leftover in GetBlockingColumns(connection, table.Name).Where(c => !modelColumns.Contains(c)))
+                    {
+                        Execute(connection, $"ALTER TABLE \"{table.Name}\" DROP COLUMN \"{leftover}\";");
+                    }
                 }
             }
             finally
@@ -65,6 +74,27 @@ namespace BatchBaker.Data
             while (reader.Read())
             {
                 columns.Add(reader.GetString(reader.GetOrdinal("name")));
+            }
+            return columns;
+        }
+
+        // Columns that reject an insert which doesn't mention them: NOT NULL, no
+        // default, and not the primary key (which SQLite fills in itself).
+        private static List<string> GetBlockingColumns(DbConnection connection, string table)
+        {
+            var columns = new List<string>();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info(\"{table}\");";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                bool notNull = reader.GetInt32(reader.GetOrdinal("notnull")) == 1;
+                bool hasDefault = !reader.IsDBNull(reader.GetOrdinal("dflt_value"));
+                bool isKey = reader.GetInt32(reader.GetOrdinal("pk")) > 0;
+                if (notNull && !hasDefault && !isKey)
+                {
+                    columns.Add(reader.GetString(reader.GetOrdinal("name")));
+                }
             }
             return columns;
         }

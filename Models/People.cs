@@ -17,6 +17,8 @@ namespace BatchBaker.Models
         public string TemporaryPassword { get; set; } = string.Empty; 
         public bool ImportSuccess { get; set; } = false;
         public string ImportError { get; set; } = string.Empty;
+        // Set once the account exists in AD, so saving again doesn't try to recreate it.
+        public bool CreatedInAD { get; set; } = false;
 
         public int ImportSetId { get; set; }
         [NotMapped]

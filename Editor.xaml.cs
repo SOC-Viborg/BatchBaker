@@ -23,7 +23,14 @@ namespace BatchBaker
             _person = person;
             Title = isNew ? "Tilføj bruger" : "Redigér bruger";
 
-            if (!isNew && !person.ImportSuccess && !string.IsNullOrWhiteSpace(person.ImportError))
+            if (person.CreatedInAD)
+            {
+                // Edits here aren't pushed to an account that already exists.
+                RejectReasonText.Text = "Brugeren er allerede oprettet i Active Directory. Ændringer gemmes kun i databasen.";
+                RejectReasonText.Foreground = System.Windows.Media.Brushes.DarkGoldenrod;
+                RejectReasonText.Visibility = Visibility.Visible;
+            }
+            else if (!isNew && !person.ImportSuccess && !string.IsNullOrWhiteSpace(person.ImportError))
             {
                 RejectReasonText.Text = $"Afvist: {person.ImportError}";
                 RejectReasonText.Visibility = Visibility.Visible;
@@ -35,7 +42,9 @@ namespace BatchBaker
             EmailBox.Text = person.Email;
             CountryBox.Text = string.IsNullOrWhiteSpace(person.Country) ? "Denmark" : person.Country;
             PhoneBox.Text = person.PhoneNumber;
-            PasswordBox.Text = person.TemporaryPassword;
+            PasswordBox.Text = isNew && string.IsNullOrWhiteSpace(person.TemporaryPassword)
+                ? MainWindowHelpers.GenerateNewPassword()
+                : person.TemporaryPassword;
 
             // A dropdown instead of free text, so the department always matches an OU.
             // A misspelled value matches nothing and is left blank for the user to pick.
@@ -43,6 +52,11 @@ namespace BatchBaker
             DepartmentBox.SelectedItem = adService.MatchDepartment(person.Department);
 
             Loaded += (_, _) => FirstNameBox.Focus();
+        }
+
+        private void GeneratePasswordButton_Click(object sender, RoutedEventArgs e)
+        {
+            PasswordBox.Text = MainWindowHelpers.GenerateNewPassword();
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)

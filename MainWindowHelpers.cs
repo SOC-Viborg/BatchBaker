@@ -4,18 +4,39 @@ using System.Collections.Generic;
 using System.DirectoryServices;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace BatchBaker
 {
     internal static class MainWindowHelpers
     {
-        public static string GenerateNewPassword(int length = 12)
+        // Temporary password for a new AD account: 12 characters made of 8 letters
+        // (at least one upper- and one lowercase), 2 digits and 2 symbols, so AD's
+        // complexity policy accepts it. Uses a cryptographic RNG. Look-alike
+        // characters (0/O, 1/l/I) are left out because it's read off a printed PDF.
+        public static string GenerateNewPassword()
         {
-            const string validChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890!@#$%^&*()";
-            var random = new Random();
-            return new string(Enumerable.Repeat(validChars, length)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
+            const string lower = "abcdefghijkmnopqrstuvwxyz";
+            const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+            const string letters = lower + upper;
+            const string digits = "23456789";
+            const string symbols = "!@#$%&*?";
+
+            var chars = new List<char> { Pick(lower), Pick(upper) };
+            for (int i = 0; i < 6; i++) chars.Add(Pick(letters));
+            for (int i = 0; i < 2; i++) chars.Add(Pick(digits));
+            for (int i = 0; i < 2; i++) chars.Add(Pick(symbols));
+
+            // Shuffle so the digits and symbols aren't always at the end.
+            for (int i = chars.Count - 1; i > 0; i--)
+            {
+                int j = RandomNumberGenerator.GetInt32(i + 1);
+                (chars[i], chars[j]) = (chars[j], chars[i]);
+            }
+            return new string(chars.ToArray());
+
+            static char Pick(string set) => set[RandomNumberGenerator.GetInt32(set.Length)];
         }
 
 
@@ -38,9 +59,10 @@ namespace BatchBaker
                 return lines.Skip(1).Select(line =>
                 {
                     string[] data = line.Split(',');
-                    if (data.Length < 9)
+                    // The 9th column (password) is optional, since it's never used.
+                    if (data.Length < 8)
                     {
-                        throw new FormatException($"CSV line does not contain expected 9 fields: {line}");
+                        throw new FormatException($"CSV line does not contain expected 8 fields: {line}");
                     }
 
                     // Because most users are from Denmark, the standard for country is to default to Denmark if the field is empty.
@@ -80,7 +102,8 @@ namespace BatchBaker
                         Country = data[5].Trim(),
                         // data[6] is the CSV's Titel column, which is no longer used.
                         PhoneNumber = data[7].Trim(),
-                        TemporaryPassword = data[8].Trim()
+                        // Any password in the CSV is ignored; every user gets a generated one.
+                        TemporaryPassword = GenerateNewPassword()
                     };
                 }).ToList(); // Materialize the list to ensure all parsing happens before returning
             }

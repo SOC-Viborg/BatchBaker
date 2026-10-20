@@ -98,33 +98,82 @@ namespace BatchBaker
             logViewer.ShowDialog();
         }
 
+        // Usernames already in the database, minus the grid's own saved rows, so a
+        // row reloaded at startup isn't flagged as a duplicate of itself.
+        private List<string> GetExistingUsernames(IEnumerable<People> grid)
+        {
+            var savedIds = grid.Where(p => p.Id != 0).Select(p => p.Id).ToList();
+            return dbContext.People.Where(p => !savedIds.Contains(p.Id)).Select(p => p.Username).ToList();
+        }
+
         private void OnSaveClicked(object sender, RoutedEventArgs e)
         {
-        // Validation before attempting a save.
-            var people = (ListViewPeople.ItemsSource as IEnumerable<People>)?.ToList();
-            if (people == null || people.Count == 0)
+            if (ListViewPeople.ItemsSource is not List<People> people || people.Count == 0)
             {
                 MessageBox.Show("Der er ingen poster at gemme. Importér en CSV-fil først.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-            var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
-            MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames); 
+
+            // Re-checked here because rows may have been edited or added since import.
+            RevalidateGrid(people);
 
             var validPeople = people.Where(p => p.ImportSuccess).ToList();
             int skipped = people.Count - validPeople.Count;
 
             if (validPeople.Count == 0)
             {
-                MessageBox.Show("Intet blev gemt — alle brugernavne findes allerede i databasen.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Intet blev gemt — ingen af posterne er gyldige. Se kolonnen Årsag.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            LogAction("Gem", $"{validPeople.Count} gyldige post(er), {skipped} sprunget over som dublet(ter).");
-
-            var SavetoAD = MessageBox.Show("Vil du også gemme de gyldige poster i Active Directory?", "Gem i Active Directory", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (SavetoAD == MessageBoxResult.Yes)
+            // New rows go in as one import set. Rows already in the database are
+            // tracked by dbContext, so SaveChanges also stores any edits made to them.
+            var newPeople = validPeople.Where(p => p.Id == 0).ToList();
+            try
             {
-                SaveUsersToActiveDirectory(validPeople);
+                if (newPeople.Count > 0)
+                {
+                    var import = new ImportSet { ImportDate = DateTime.Now, RecordCount = newPeople.Count };
+                    import.People.AddRange(newPeople);
+                    dbContext.ImportSets.Add(import);
+                }
+                dbContext.SaveChanges();
+            }
+            catch (Exception ex)
+            {
+                // Un-queue the rows that failed to insert; otherwise every later
+                // SaveChanges (including LogAction below) retries them and fails too.
+                foreach (var entry in dbContext.ChangeTracker.Entries().Where(en => en.State == EntityState.Added).ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+                foreach (var person in newPeople)
+                {
+                    person.Id = 0;
+                    person.ImportSetId = 0;
+                }
+
+                // EF's own message just says "see the inner exception", so show that instead.
+                string reason = ex.InnerException?.Message ?? ex.Message;
+                MessageBox.Show($"Fejl ved gemning i databasen: {reason}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+                LogAction("Gem fejlede", reason);
+                return;
+            }
+
+            LogAction("Gem", $"{newPeople.Count} ny(e) post(er) gemt i databasen, {skipped} ugyldige sprunget over.");
+
+            var pending = validPeople.Where(p => !p.CreatedInAD).ToList();
+            if (pending.Count == 0)
+            {
+                MessageBox.Show($"Gemt i databasen. Alle {validPeople.Count} gyldige bruger(e) findes allerede i Active Directory.", "Gemt", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var saveToAD = MessageBox.Show($"Gemt i databasen. Vil du også oprette {pending.Count} bruger(e) i Active Directory?", "Opret i Active Directory", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (saveToAD == MessageBoxResult.Yes)
+            {
+                SaveUsersToActiveDirectory(pending);
+                dbContext.SaveChanges(); // stores each row's AD result (CreatedInAD, Status, Årsag)
             }
         }
 
@@ -135,6 +184,7 @@ namespace BatchBaker
         {
             LogAction("AD-oprettelse startet", $"{people.Count} bruger(e), domæne '{activeDirectory.Domain}'.");
             int pdfCount = 0;
+            string? pdfFolder = null; // created on the first PDF, so a run with no PDFs leaves no empty folder
 
             foreach (var person in people)
             {
@@ -165,6 +215,7 @@ namespace BatchBaker
                     user.Save();
                     user.ExpirePasswordNow(); // forces a password change at first logon
 
+                    person.CreatedInAD = true;
                     person.ImportSuccess = true;
                     person.ImportError = string.Empty;
                     LogAction("AD-bruger oprettet", $"{person.Username} i {ou}.");
@@ -184,7 +235,8 @@ namespace BatchBaker
                     // Same here: the account is already created, so a PDF failure is only noted.
                     try
                     {
-                        string pdfPath = pdfService.GeneratePDF(person);
+                        pdfFolder ??= pdfService.CreateRunFolder();
+                        string pdfPath = pdfService.GeneratePDF(person, pdfFolder);
                         pdfCount++;
                         LogAction("PDF oprettet", $"{person.Username}: {pdfPath}");
                     }
@@ -215,11 +267,24 @@ namespace BatchBaker
             string summary = failed == 0
                 ? $"Oprettede {created} bruger(e) i Active Directory."
                 : $"Oprettede {created} bruger(e). {failed} fejlede eller blev sprunget over. Se kolonnen Årsag eller Hjælp > Log for detaljer.";
-            if (pdfCount > 0)
+            if (pdfFolder != null)
             {
-                summary += $"{Environment.NewLine}{Environment.NewLine}{pdfCount} PDF(er) gemt i {pdfService.OutputFolder}";
+                summary += $"{Environment.NewLine}{Environment.NewLine}{pdfCount} PDF(er) gemt i {pdfFolder}";
             }
             MessageBox.Show(summary, "Active Directory", MessageBoxButton.OK, failed == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+
+            // Opened after the message box so the folder isn't hidden behind it.
+            if (pdfFolder != null)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start("explorer.exe", $"\"{pdfFolder}\"");
+                }
+                catch (Exception ex)
+                {
+                    LogAction("Kunne ikke åbne PDF-mappe", ex.Message);
+                }
+            }
         }
 
         // UserPrincipal has no properties for these, so they're written through the
@@ -372,8 +437,7 @@ namespace BatchBaker
         // whether it's now valid.
         private void RevalidateGrid(List<People> people)
         {
-            var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
-            MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+            MainWindowHelpers.ValidateForDuplicateUsernames(people, GetExistingUsernames(people));
             MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
             ListViewPeople.Items.Refresh();
         }
@@ -398,7 +462,7 @@ namespace BatchBaker
                 {
                     string filePath = openFileDialog.FileName;
                     var people = MainWindowHelpers.ReadCSV(filePath).ToList();
-                    var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
+                    var existingUsernames = GetExistingUsernames(people);
                     MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
                     MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
 
