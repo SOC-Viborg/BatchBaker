@@ -1,4 +1,6 @@
 <Solution>
-  <Project Path="../BatchBaker.Wizard/BatchBaker.Wizard.vdproj" Type="Installer" />
+  <Project Path="../BatchBaker.Wizard/BatchBaker.Wizard.vdproj" Type="Installer">
+    <Build />
+  </Project>
   <Project Path="BatchBaker.csproj" />
 </Solution>
