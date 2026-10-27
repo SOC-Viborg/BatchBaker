@@ -1,0 +1,28 @@
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace BatchBaker.Models
+{
+    public class People
+    {
+        [Key]
+        public int Id { get; set; }
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public string Country { get; set; } = string.Empty;
+        public string PhoneNumber { get; set; } = string.Empty;
+        public string TemporaryPassword { get; set; } = string.Empty; 
+        public bool ImportSuccess { get; set; } = false;
+        public string ImportError { get; set; } = string.Empty;
+        // Set once the account exists in AD, so saving again doesn't try to recreate it.
+        public bool CreatedInAD { get; set; } = false;
+
+        public int ImportSetId { get; set; }
+        [NotMapped]
+        public ImportSet ImportSet { get; set; } = default!;
+
+    }
+}

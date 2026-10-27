@@ -1,0 +1,75 @@
+﻿using BatchBaker.Configuration;
+using Microsoft.Extensions.Options;
+using System.DirectoryServices;
+using System.Reflection;
+
+namespace BatchBaker.Services
+{
+    public class ADService
+    {
+        public ADDepartments departments { get; set; } = default!;
+        public ADService(IOptions<ActiveDirectory> activeDirectoryOptions)
+        {
+            departments = activeDirectoryOptions.Value.Departments;
+        }
+
+        public bool DoesOuExist(string distinguishedName)
+        {
+#if DEBUG
+            return true; // Always return true in debug mode for testing purposes
+#else 
+            // Eksempel: "OU=Salg,DC=firma,DC=local"
+            string path = $"LDAP://{distinguishedName}";
+
+            try
+            {
+                // Windows logger automatisk ind med applikationens egne rettigheder
+                using (var entry = new DirectoryEntry(path))
+                {
+                    // Tvinger AD til at tjekke om stien findes i virkeligheden
+                    string schema = entry.SchemaClassName;
+                    return schema.Equals("organizationalUnit", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            catch
+            {
+                return false; // OU findes ikke, eller applikationen har ikke rettigheder til at læse den
+            }
+#endif
+        }
+
+        // The department names a CSV (or the editor's dropdown) may use, in config order.
+        public List<string> DepartmentNames => typeof(ADDepartments).GetProperties()
+            .Select(p => p.GetCustomAttribute<CSVValueAttribute>()?.ColumnName)
+            .OfType<string>()
+            .ToList();
+
+        // Returns the official spelling of a department name, or null if it matches none.
+        public string? MatchDepartment(string name)
+        {
+            string formattedName = NormalizeDepartment(name);
+            return DepartmentNames.FirstOrDefault(d => d.Equals(formattedName, StringComparison.CurrentCultureIgnoreCase));
+        }
+
+        private static string NormalizeDepartment(string name)
+            => (name ?? string.Empty).Replace('_', ' ').Replace('-', ' ').Trim();
+
+        public bool TryValidateDepartment(string name, out string Ou)
+        {
+            PropertyInfo[] properties = typeof(ADDepartments).GetProperties();
+            foreach (PropertyInfo property in properties)
+            {
+                var formattedName = NormalizeDepartment(name);
+
+                var att = property.GetCustomAttribute<CSVValueAttribute>();
+                if (att != null && att.ColumnName.Equals(formattedName, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    Ou = property.GetValue(departments)?.ToString() ?? "null";
+                    return true;
+                }
+            }
+            Ou = default!;
+            return false; 
+        }
+    }   
+}

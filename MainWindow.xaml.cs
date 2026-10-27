@@ -1,12 +1,22 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
+using BatchBaker.Configuration;
+using BatchBaker.Data;
+using BatchBaker.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Microsoft.Win32;
+using System.DirectoryServices.AccountManagement;
+using BatchBaker.Services;
 
 namespace BatchBaker
 {
@@ -15,31 +25,421 @@ namespace BatchBaker
     /// </summary>
     public partial class MainWindow : Window
     {
-        public MainWindow()
+        public AppDbContext dbContext = new AppDbContext();
+        private readonly ActiveDirectory activeDirectory;
+        private readonly ADService adService; 
+        private readonly PDFService pdfService;
+        public MainWindow(IOptions<ActiveDirectory> activeDirectoryOptions, ADService adService, PDFService pdfService)
         {
             InitializeComponent();
+            activeDirectory = activeDirectoryOptions.Value;
+            this.adService = adService;
+            this.pdfService = pdfService;
+
+            PropertyInfo[] properties = typeof(ADDepartments).GetProperties();
+            foreach (PropertyInfo property in properties)
+            {
+                string propertyName = property.Name;
+                string propertyValue = property.GetValue(activeDirectory.Departments)?.ToString() ?? "null";
+                Console.WriteLine($"{propertyName}: {propertyValue}");
+                
+                var exists = adService.DoesOuExist(propertyValue);
+                if (!exists)
+                {
+                    MessageBox.Show("OU'en findes ikke i Active Directory: " + propertyValue, "Kontrol af OU", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                // MessageBox.Show($"OU '{propertyName}' with DN '{propertyValue}' exists: {exists}", "OU Existence Check", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
+            //var programmersOuexists = adService.DoesOuExist(departments.Data_Programmers);
+            //var infrastructureOuexists = adService.DoesOuExist(departments.Data_Infrastructure);
+            //var itSupportOuexists = adService.DoesOuExist(departments.Data_ITSupport);
+
+
+
+            //var test = configuration["ActiveDirectory:Departments:Data_Programmers"];
+            //MessageBox.Show(departments.Business_Marketing);
+            //try
+            //{
+            //    var repository = new PersonRepository();
+            //    repository.EnsureCreated();
+            //    ListViewPeople.ItemsSource = repository.LoadAll();
+            //}
+            //catch (Exception ex)
+            //{
+            //    MessageBox.Show($"Error loading saved users: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            //}
+            DatabaseInitializer.EnsureSchema(dbContext);
+            LogAction("Program startet", string.Empty);
+            var import = dbContext.ImportSets.Include(i => i.People).OrderByDescending(i => i.ImportDate).FirstOrDefault();
+            if (import != null)
+            {
+                ListViewPeople.ItemsSource = import.People;
+            }
+        }
+
+        // Records a timestamped entry for the activity log, viewable from Help > Logs.
+        private void LogAction(string action, string details)
+        {
+            dbContext.ActivityLogs.Add(new ActivityLog
+            {
+                Timestamp = DateTime.Now,
+                Action = action,
+                Details = details
+            });
+            dbContext.SaveChanges();
+        }
+
+        private void OnViewLogsClicked(object sender, RoutedEventArgs e)
+        {
+            var logs = dbContext.ActivityLogs.OrderByDescending(l => l.Timestamp).ToList();
+            var logViewer = new LogViewerWindow(logs) { Owner = this };
+            logViewer.ShowDialog();
+        }
+
+        // Usernames already in the database, minus the grid's own saved rows, so a
+        // row reloaded at startup isn't flagged as a duplicate of itself.
+        private List<string> GetExistingUsernames(IEnumerable<People> grid)
+        {
+            var savedIds = grid.Where(p => p.Id != 0).Select(p => p.Id).ToList();
+            return dbContext.People.Where(p => !savedIds.Contains(p.Id)).Select(p => p.Username).ToList();
         }
 
         private void OnSaveClicked(object sender, RoutedEventArgs e)
         {
-            var people = ListViewPeople.ItemsSource as IEnumerable<Person>;
-            if (people == null || !people.Any())
+            if (ListViewPeople.ItemsSource is not List<People> people || people.Count == 0)
             {
-                MessageBox.Show("No records loaded to save. Import a CSV file first.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Der er ingen poster at gemme. Importér en CSV-fil først.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
+            // Re-checked here because rows may have been edited or added since import.
+            RevalidateGrid(people);
+
+            var validPeople = people.Where(p => p.ImportSuccess).ToList();
+            int skipped = people.Count - validPeople.Count;
+
+            if (validPeople.Count == 0)
+            {
+                MessageBox.Show("Intet blev gemt — ingen af posterne er gyldige. Se kolonnen Årsag.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // New rows go in as one import set. Rows already in the database are
+            // tracked by dbContext, so SaveChanges also stores any edits made to them.
+            var newPeople = validPeople.Where(p => p.Id == 0).ToList();
             try
             {
-                var repository = new PersonRepository();
-                repository.EnsureCreated();
-                int count = repository.SaveAll(people);
-                MessageBox.Show($"Successfully saved {count} record(s) to the database.", "Save Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (newPeople.Count > 0)
+                {
+                    var import = new ImportSet { ImportDate = DateTime.Now, RecordCount = newPeople.Count };
+                    import.People.AddRange(newPeople);
+                    dbContext.ImportSets.Add(import);
+                }
+                dbContext.SaveChanges();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error saving to database: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                // Un-queue the rows that failed to insert; otherwise every later
+                // SaveChanges (including LogAction below) retries them and fails too.
+                foreach (var entry in dbContext.ChangeTracker.Entries().Where(en => en.State == EntityState.Added).ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+                foreach (var person in newPeople)
+                {
+                    person.Id = 0;
+                    person.ImportSetId = 0;
+                }
+
+                // EF's own message just says "see the inner exception", so show that instead.
+                string reason = ex.InnerException?.Message ?? ex.Message;
+                MessageBox.Show($"Fejl ved gemning i databasen: {reason}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+                LogAction("Gem fejlede", reason);
+                return;
             }
+
+            LogAction("Gem", $"{newPeople.Count} ny(e) post(er) gemt i databasen, {skipped} ugyldige sprunget over.");
+
+            var pending = validPeople.Where(p => !p.CreatedInAD).ToList();
+            if (pending.Count == 0)
+            {
+                MessageBox.Show($"Gemt i databasen. Alle {validPeople.Count} gyldige bruger(e) findes allerede i Active Directory.", "Gemt", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var saveToAD = MessageBox.Show($"Gemt i databasen. Vil du også oprette {pending.Count} bruger(e) i Active Directory?", "Opret i Active Directory", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (saveToAD == MessageBoxResult.Yes)
+            {
+                SaveUsersToActiveDirectory(pending);
+                dbContext.SaveChanges(); // stores each row's AD result (CreatedInAD, Status, Årsag)
+            }
+        }
+
+        // Creates each person in the OU matching their department. Every row is
+        // handled on its own so one failure doesn't stop the rest, and each outcome
+        // is written to the activity log and the grid's Status/Reason columns.
+        private void SaveUsersToActiveDirectory(List<People> people)
+        {
+            LogAction("AD-oprettelse startet", $"{people.Count} bruger(e), domæne '{activeDirectory.Domain}'.");
+            int pdfCount = 0;
+            string? pdfFolder = null; // created on the first PDF, so a run with no PDFs leaves no empty folder
+
+            foreach (var person in people)
+            {
+                if (!adService.TryValidateDepartment(person.Department, out string ou))
+                {
+                    person.ImportSuccess = false;
+                    person.ImportError = $"Ingen OU matcher afdelingen '{person.Department}'";
+                    LogAction("AD-bruger sprunget over", $"{person.Username}: {person.ImportError}.");
+                    continue;
+                }
+
+                try
+                {
+                    using var context = new PrincipalContext(ContextType.Domain, activeDirectory.Domain, ou);
+                    using var user = new UserPrincipal(context)
+                    {
+                        Name = GetObjectName(context, person),
+                        SamAccountName = person.Username,
+                        GivenName = NullIfBlank(person.FirstName),
+                        Surname = NullIfBlank(person.LastName),
+                        DisplayName = NullIfBlank($"{person.FirstName} {person.LastName}".Trim()),
+                        EmailAddress = NullIfBlank(person.Email),
+                        VoiceTelephoneNumber = NullIfBlank(person.PhoneNumber),
+                        UserPrincipalName = $"{person.Username}@{activeDirectory.Domain}",
+                        Enabled = true
+                    };
+                    user.SetPassword(person.TemporaryPassword);
+                    user.Save();
+                    user.ExpirePasswordNow(); // forces a password change at first logon
+
+                    person.CreatedInAD = true;
+                    person.ImportSuccess = true;
+                    person.ImportError = string.Empty;
+                    LogAction("AD-bruger oprettet", $"{person.Username} i {ou}.");
+
+                    // The account exists at this point, so a failure here is reported
+                    // separately rather than marking the whole user as failed.
+                    try
+                    {
+                        SetExtraAttributes(user, person);
+                    }
+                    catch (Exception ex)
+                    {
+                        person.ImportError = $"Oprettet, men afdeling/land blev ikke sat: {ex.Message}";
+                        LogAction("AD-attributter fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
+                    }
+
+                    // Same here: the account is already created, so a PDF failure is only noted.
+                    try
+                    {
+                        pdfFolder ??= pdfService.CreateRunFolder();
+                        string pdfPath = pdfService.GeneratePDF(person, pdfFolder);
+                        pdfCount++;
+                        LogAction("PDF oprettet", $"{person.Username}: {pdfPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        person.ImportError = string.IsNullOrEmpty(person.ImportError)
+                            ? $"Oprettet, men PDF fejlede: {ex.Message}"
+                            : $"{person.ImportError}; PDF fejlede: {ex.Message}";
+                        LogAction("PDF fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    string reason = ex.InnerException == null
+                        ? $"{ex.GetType().Name}: {ex.Message}"
+                        : $"{ex.GetType().Name}: {ex.Message} ({ex.InnerException.Message})";
+                    person.ImportSuccess = false;
+                    person.ImportError = reason;
+                    LogAction("AD-bruger fejlede", $"{person.Username} i {ou}: {reason}");
+                }
+            }
+
+            int created = people.Count(p => p.ImportSuccess);
+            int failed = people.Count - created;
+            LogAction("AD-oprettelse afsluttet", $"{created} oprettet, {failed} fejlede eller sprunget over.");
+
+            ListViewPeople.Items.Refresh();
+            string summary = failed == 0
+                ? $"Oprettede {created} bruger(e) i Active Directory."
+                : $"Oprettede {created} bruger(e). {failed} fejlede eller blev sprunget over. Se kolonnen Årsag eller Hjælp > Log for detaljer.";
+            if (pdfFolder != null)
+            {
+                summary += $"{Environment.NewLine}{Environment.NewLine}{pdfCount} PDF(er) gemt i {pdfFolder}";
+            }
+            MessageBox.Show(summary, "Active Directory", MessageBoxButton.OK, failed == 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+
+            // Opened after the message box so the folder isn't hidden behind it.
+            if (pdfFolder != null)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start("explorer.exe", $"\"{pdfFolder}\"");
+                }
+                catch (Exception ex)
+                {
+                    LogAction("Kunne ikke åbne PDF-mappe", ex.Message);
+                }
+            }
+        }
+
+        // UserPrincipal has no properties for these, so they're written through the
+        // underlying directory entry (which the principal owns, so it isn't disposed here).
+        private static void SetExtraAttributes(UserPrincipal user, People person)
+        {
+            var entry = (System.DirectoryServices.DirectoryEntry)user.GetUnderlyingObject();
+            bool changed = false;
+
+            void SetIfPresent(string attribute, string value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    entry.Properties[attribute].Value = value;
+                    changed = true;
+                }
+            }
+
+            SetIfPresent("department", person.Department);
+            SetIfPresent("co", person.Country);
+
+            if (changed)
+            {
+                entry.CommitChanges();
+            }
+        }
+
+        // The object name (CN) is what ADUC shows in its Name column and must be unique
+        // within the OU, so a full name that's already taken there gets the username
+        // appended. Falls back to the username if the person has no name at all.
+        private static string GetObjectName(PrincipalContext context, People person)
+        {
+            string fullName = $"{person.FirstName} {person.LastName}".Trim();
+            if (string.IsNullOrEmpty(fullName))
+            {
+                return person.Username;
+            }
+
+            using var existing = Principal.FindByIdentity(context, IdentityType.Name, fullName);
+            return existing == null ? fullName : $"{fullName} ({person.Username})";
+        }
+
+        // AD rejects empty strings for these attributes; null leaves them unset.
+        private static string? NullIfBlank(string value)
+            => string.IsNullOrWhiteSpace(value) ? null : value;
+
+
+        // private void OnSaveClicked(object sender, RoutedEventArgs e)
+        // {
+        //     var people = (ListViewPeople.ItemsSource as IEnumerable<People>)?.ToList();
+        //     if (people == null || people.Count == 0)
+        //     {
+        //         MessageBox.Show("No records loaded to save. Import a CSV file first.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
+        //         return;
+        //     }
+
+        //     // Re-checked here (not just at Import) because the grid can also be
+        //     // pre-populated from the last saved import set on startup, so a stale
+        //     // batch shouldn't be able to re-save itself as duplicates.
+        //     var existingUsernames = dbContext.People.Select(p => p.Username).ToList();
+        //     MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+
+        //     var validPeople = people.Where(p => p.ImportSuccess).ToList();
+        //     int skipped = people.Count - validPeople.Count;
+
+        //     if (validPeople.Count == 0)
+        //     {
+        //         MessageBox.Show("Nothing was saved — every record's username already exists in the database.", "Nothing to Save", MessageBoxButton.OK, MessageBoxImage.Warning);
+        //         return;
+        //     }
+
+        //     try
+        //     {
+        //         var import = new ImportSet { ImportDate = DateTime.Now, RecordCount = validPeople.Count };
+        //         dbContext.ImportSets.Add(import);
+        //         dbContext.SaveChanges();
+        //         import.People.AddRange(validPeople);
+        //         dbContext.SaveChanges();
+
+        //         string message = skipped > 0
+        //             ? $"Saved {validPeople.Count} record(s). Skipped {skipped} duplicate(s)."
+        //             : $"Successfully saved {validPeople.Count} record(s) to the database.";
+        //         MessageBox.Show(message, "Save Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         MessageBox.Show($"Error saving to database: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        //     }
+        // }
+
+        // private void OnCreateActiveDirectoryClicked(object sender, RoutedEventArgs e)
+        // {
+        //     var people = (ListViewPeople.ItemsSource as IEnumerable<People>)?.ToList();
+        //     if (people == null || people.Count == 0)
+        //     {
+        //         MessageBox.Show("No records loaded. Import a CSV file first.", "Nothing to Create", MessageBoxButton.OK, MessageBoxImage.Warning);
+        //         return;
+        //     }
+
+        //     string ldapPath = AppSettings.Instance.ActiveDirectory.LdapPath;
+        //     MainWindowHelpers.CreateActiveDirectoryUsers(people, ldapPath);
+
+        //     int succeeded = people.Count(p => p.ImportSuccess);
+        //     int failed = people.Count - succeeded;
+        //     string summary = failed == 0
+        //         ? $"Created {succeeded} user(s) in Active Directory."
+        //         : $"Created {succeeded} user(s). {failed} failed — see the Reason column for details.";
+        //     MessageBox.Show(summary, "Active Directory", MessageBoxButton.OK, MessageBoxImage.Information);
+
+        //     ListViewPeople.Items.Refresh();
+        // }
+
+        // Adds a single person by hand, for when one new user doesn't warrant a CSV.
+        private void OnAddPersonClicked(object sender, RoutedEventArgs e)
+        {
+            var person = new People();
+            var editor = new Editor(person, adService, isNew: true) { Owner = this };
+            if (editor.ShowDialog() != true)
+            {
+                return;
+            }
+
+            if (ListViewPeople.ItemsSource is not List<People> people)
+            {
+                people = new List<People>();
+                ListViewPeople.ItemsSource = people;
+            }
+            people.Add(person);
+            RevalidateGrid(people);
+            LogAction("Bruger tilføjet", person.Username);
+        }
+
+        // Opens the clicked row in the editor, e.g. to fix a rejected row in place.
+        private void ListViewPeople_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (ListViewPeople.SelectedItem is not People person || ListViewPeople.ItemsSource is not List<People> people)
+            {
+                return;
+            }
+
+            var editor = new Editor(person, adService, isNew: false) { Owner = this };
+            if (editor.ShowDialog() == true)
+            {
+                RevalidateGrid(people);
+                LogAction("Bruger redigeret", person.Username);
+            }
+        }
+
+        // Re-runs the same checks as import, so an edited or added row shows
+        // whether it's now valid.
+        private void RevalidateGrid(List<People> people)
+        {
+            MainWindowHelpers.ValidateForDuplicateUsernames(people, GetExistingUsernames(people));
+            MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
+            ListViewPeople.Items.Refresh();
         }
 
         private void OnExitClicked(object sender, RoutedEventArgs e)
@@ -47,18 +447,11 @@ namespace BatchBaker
             Application.Current.Shutdown();
         }
 
-        private void ClickHandler3(object sender, RoutedEventArgs e)
-        {
-            //do something
-
-        }
-
-
         private void ImportCSV_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog
             {
-                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                Filter = "CSV-filer (*.csv)|*.csv|Alle filer (*.*)|*.*",
                 FilterIndex = 1,
                 RestoreDirectory = true
             };
@@ -68,19 +461,45 @@ namespace BatchBaker
                 try
                 {
                     string filePath = openFileDialog.FileName;
-                    var people = MainWindowHelpers.ReadCSV(filePath);
-                    ListViewPeople.ItemsSource = people;
-                    MessageBox.Show($"Successfully loaded {people.Count()} records from the CSV file.", "Import Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                    var people = MainWindowHelpers.ReadCSV(filePath).ToList();
+                    var existingUsernames = GetExistingUsernames(people);
+                    MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
+                    MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
+
+                    //foreach (var person in people)
+                    //{
+                    //    if (adService.TryValidateDepartment(person.Department, out string ou))
+                    //    {
+                    //        MessageBox.Show($"Department '{person.Department}' is valid and maps to OU '{ou}'.", "Department Validation", MessageBoxButton.OK, MessageBoxImage.Information);
+                    //    }
+                    //    else
+                    //    {
+                    //        MessageBox.Show($"Department '{person.Department}' is invalid or does not map to a known OU.", "Department Validation", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    //    }
+                    //}
+
+                    var previewWindow = new ImportPreviewWindow(people, existingUsernames, adService) { Owner = this };
+                    if (previewWindow.ShowDialog() == true)
+                    {
+                        ListViewPeople.ItemsSource = previewWindow.ValidPeople;
+                        int skipped = people.Count - previewWindow.ValidPeople.Count;
+                        string message = skipped > 0
+                            ? $"Importerede {previewWindow.ValidPeople.Count} post(er). {skipped} ugyldige sprunget over."
+                            : $"{previewWindow.ValidPeople.Count} post(er) blev importeret.";
+                        MessageBox.Show(message, "Import gennemført", MessageBoxButton.OK, MessageBoxImage.Information);
+                        LogAction("Import", $"{System.IO.Path.GetFileName(filePath)}: {previewWindow.ValidPeople.Count} post(er) importeret, {skipped} sprunget over.");
+                    }
+                    else
+                    {
+                        LogAction("Import annulleret", System.IO.Path.GetFileName(filePath));
+                    }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Error loading CSV file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show($"Fejl ved indlæsning af CSV-fil: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+                    LogAction("Import fejlede", ex.Message);
                 }
             }
-        }
-        public void SaveUsers_Click(object sender, RoutedEventArgs e)
-        {
-            
         }
 
     }
