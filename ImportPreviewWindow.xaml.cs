@@ -55,6 +55,7 @@ namespace BatchBaker
             {
                 MainWindowHelpers.ValidateForDuplicateUsernames(_people, _existingUsernames);
                 MainWindowHelpers.ValidateDepartments(_people, d => _adService.TryValidateDepartment(d, out _));
+                MainWindowHelpers.ValidateForActiveDirectory(_people);
                 PreviewListView.Items.Refresh();
                 UpdateSummary();
             }

@@ -54,16 +54,34 @@ namespace BatchBaker
 
                 // Read file with UTF-8 encoding to properly handle special characters (Æ, Ø, Å)
                 string[] lines = File.ReadAllLines(fullPath, Encoding.UTF8);
-
-                // Skip header row and project each line as a Person
-                return lines.Skip(1).Select(line =>
+                if (lines.Length == 0)
                 {
-                    string[] data = line.Split(',');
-                    // The 9th column (password) is optional, since it's never used.
-                    if (data.Length < 8)
+                    return new List<People>();
+                }
+
+                // Excel saves CSV with the list separator from the regional settings,
+                // which is ';' on Danish setups, so use whichever the header row uses.
+                char separator = lines[0].Count(c => c == ';') > lines[0].Count(c => c == ',') ? ';' : ',';
+
+                // Skip header row and project each line as a Person. Rows that are
+                // empty or only separators are skipped: Excel writes formatted but
+                // unused rows (as in the import template) as ";;;;;;;".
+                return lines.Skip(1)
+                    .Where(line => line.Any(c => c != separator && !char.IsWhiteSpace(c)))
+                    .Select(line =>
+                {
+                    var fields = SplitCsvLine(line, separator);
+                    if (fields.Count < 5)
                     {
-                        throw new FormatException($"CSV line does not contain expected 8 fields: {line}");
+                        throw new FormatException($"CSV line does not contain the expected columns: {line}");
                     }
+                    // Missing trailing columns (e.g. an empty phone number, or the
+                    // optional password column) are treated as empty.
+                    while (fields.Count < 9)
+                    {
+                        fields.Add(string.Empty);
+                    }
+                    string[] data = fields.ToArray();
 
                     // Because most users are from Denmark, the standard for country is to default to Denmark if the field is empty.
 
@@ -117,6 +135,53 @@ namespace BatchBaker
             }
         }
 
+        // Splits one CSV line on the separator. A field in double quotes may contain
+        // the separator, and "" inside it stands for a single quote, which is how
+        // Excel writes such fields.
+        private static List<string> SplitCsvLine(string line, char separator)
+        {
+            var fields = new List<string>();
+            var field = new StringBuilder();
+            bool inQuotes = false;
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (inQuotes)
+                {
+                    if (c == '"' && i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        field.Append('"');
+                        i++;
+                    }
+                    else if (c == '"')
+                    {
+                        inQuotes = false;
+                    }
+                    else
+                    {
+                        field.Append(c);
+                    }
+                }
+                else if (c == '"' && field.ToString().Trim().Length == 0)
+                {
+                    inQuotes = true;
+                    field.Clear();
+                }
+                else if (c == separator)
+                {
+                    fields.Add(field.ToString());
+                    field.Clear();
+                }
+                else
+                {
+                    field.Append(c);
+                }
+            }
+            fields.Add(field.ToString());
+            return fields;
+        }
+
         // Flags rows whose Username already exists in the database, or is repeated
         // more than once within the same file, so duplicates never reach Save.
         // Sets ImportSuccess/ImportError on each row in place.
@@ -164,6 +229,43 @@ namespace BatchBaker
                 {
                     person.ImportSuccess = false;
                     person.ImportError = $"Ukendt afdeling '{person.Department}'";
+                }
+            }
+        }
+
+        // Characters Active Directory doesn't allow in a pre-Windows 2000 logon name.
+        private static readonly char[] InvalidUsernameChars = "\"/\\[]:;|=,+*?<>@".ToCharArray();
+
+        // Flags rows that Active Directory would reject with "A constraint violation
+        // occurred": values over AD's length limits or a username it doesn't allow.
+        // Catching them here lets the user fix them before anything is sent to AD.
+        public static void ValidateForActiveDirectory(IEnumerable<People> people)
+        {
+            foreach (var person in people.Where(p => p.ImportSuccess))
+            {
+                var problems = new List<string>();
+                string username = person.Username ?? string.Empty;
+                string fullName = $"{person.FirstName} {person.LastName}".Trim();
+
+                if (username.Length == 0)
+                    problems.Add("brugernavn mangler");
+                if (username.Length > 20)
+                    problems.Add($"brugernavnet er {username.Length} tegn (højst 20)");
+                if (username.IndexOfAny(InvalidUsernameChars) >= 0 || username.Any(char.IsWhiteSpace) || username.EndsWith('.'))
+                    problems.Add("brugernavnet indeholder ugyldige tegn (fx mellemrum, @, \" eller ;)");
+                if (fullName.Length > 64)
+                    problems.Add($"det fulde navn er {fullName.Length} tegn (højst 64)");
+                if ((person.FirstName ?? "").Length > 64)
+                    problems.Add("fornavnet er over 64 tegn");
+                if ((person.LastName ?? "").Length > 64)
+                    problems.Add("efternavnet er over 64 tegn");
+                if ((person.PhoneNumber ?? "").Length > 64)
+                    problems.Add("telefonnummeret er over 64 tegn");
+
+                if (problems.Count > 0)
+                {
+                    person.ImportSuccess = false;
+                    person.ImportError = "Afvises af Active Directory: " + string.Join("; ", problems);
                 }
             }
         }

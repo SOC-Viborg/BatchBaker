@@ -35,6 +35,7 @@ namespace BatchBaker
                     .ConfigureServices((context, services) =>
                     {
                         services.Configure<ActiveDirectory>(context.Configuration.GetSection("ActiveDirectory"));
+                        services.PostConfigure<ActiveDirectory>(ad => ad.ResolveDomain());
                         services.Configure<PDFSettings>(context.Configuration.GetSection("PDF"));
                         services.AddSingleton<MainWindow>();
                         services.AddSingleton<ImportPreviewWindow>();

@@ -12,6 +12,9 @@ namespace BatchBaker.Services
     {
         private readonly string _baseFolder;
 
+        // The folder each run's subfolder of PDFs goes in.
+        public string BaseFolder => _baseFolder;
+
         public PDFService(IOptions<PDFSettings> pdfSettings)
         {
             string configured = pdfSettings.Value.FilePath;
