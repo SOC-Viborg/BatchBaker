@@ -1,4 +1,5 @@
 ﻿using BatchBaker.Configuration;
+using BatchBaker.Models;
 using Microsoft.Extensions.Options;
 using System.DirectoryServices;
 using System.Reflection;
@@ -43,6 +44,79 @@ namespace BatchBaker.Services
             .Select(p => p.GetCustomAttribute<CSVValueAttribute>()?.ColumnName)
             .OfType<string>()
             .ToList();
+
+        // Each department with the sector it belongs to and its OU, in config order.
+        // The sector is the OU directly above the department's own OU
+        // (OU=IT-Support,OU=Data,... gives "Data").
+        public List<(string Sector, string Department, string Ou)> DepartmentLayout => typeof(ADDepartments).GetProperties()
+            .Select(p => (Property: p, Name: p.GetCustomAttribute<CSVValueAttribute>()?.ColumnName))
+            .Where(x => x.Name != null)
+            .Select(x =>
+            {
+                string ou = x.Property.GetValue(departments)?.ToString() ?? string.Empty;
+                var ouParts = ou.Split(',')
+                    .Select(part => part.Trim())
+                    .Where(part => part.StartsWith("OU=", StringComparison.OrdinalIgnoreCase))
+                    .Select(part => part.Substring(3))
+                    .ToList();
+                string sector = ouParts.Count >= 2 ? ouParts[1] : x.Property.Name.Split('_')[0];
+                return (sector, x.Name!, ou);
+            })
+            .ToList();
+
+        // Reads the user accounts in every department OU. An OU that can't be read
+        // (missing, no access, no domain) is reported in FailedOus instead of
+        // stopping the rest.
+        public (List<UserOverview> Users, List<string> FailedOus) GetDirectoryUsers()
+        {
+            var users = new List<UserOverview>();
+            var failedOus = new List<string>();
+
+            foreach (var (_, department, ou) in DepartmentLayout)
+            {
+                try
+                {
+                    using var entry = new DirectoryEntry($"LDAP://{ou}");
+                    using var searcher = new DirectorySearcher(entry, "(&(objectCategory=person)(objectClass=user))")
+                    {
+                        SearchScope = SearchScope.Subtree,
+                        PageSize = 500
+                    };
+                    searcher.PropertiesToLoad.AddRange(new[] { "givenName", "sn", "sAMAccountName", "mail", "co", "telephoneNumber", "userAccountControl", "whenCreated" });
+
+                    using var results = searcher.FindAll();
+                    foreach (SearchResult result in results)
+                    {
+                        string Get(string name) => result.Properties[name].Count > 0 ? result.Properties[name][0]?.ToString() ?? string.Empty : string.Empty;
+
+                        // Bit 2 of userAccountControl means the account is disabled.
+                        bool disabled = int.TryParse(Get("userAccountControl"), out int flags) && (flags & 2) != 0;
+                        string created = result.Properties["whenCreated"].Count > 0 && result.Properties["whenCreated"][0] is DateTime when
+                            ? when.ToLocalTime().ToString("dd-MM-yyyy HH:mm")
+                            : string.Empty;
+
+                        users.Add(new UserOverview
+                        {
+                            Status = disabled ? "Deaktiveret" : "Aktiv",
+                            FirstName = Get("givenName"),
+                            LastName = Get("sn"),
+                            Username = Get("sAMAccountName"),
+                            Email = Get("mail"),
+                            Department = department,
+                            Country = Get("co"),
+                            PhoneNumber = Get("telephoneNumber"),
+                            Created = created
+                        });
+                    }
+                }
+                catch (Exception)
+                {
+                    failedOus.Add(ou);
+                }
+            }
+
+            return (users, failedOus);
+        }
 
         // Returns the official spelling of a department name, or null if it matches none.
         public string? MatchDepartment(string name)

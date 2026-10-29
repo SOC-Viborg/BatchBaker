@@ -35,6 +35,7 @@ namespace BatchBaker
                     .ConfigureServices((context, services) =>
                     {
                         services.Configure<ActiveDirectory>(context.Configuration.GetSection("ActiveDirectory"));
+                        services.PostConfigure<ActiveDirectory>(ad => ad.ResolveDomain());
                         services.Configure<PDFSettings>(context.Configuration.GetSection("PDF"));
                         services.AddSingleton<MainWindow>();
                         services.AddSingleton<ImportPreviewWindow>();
@@ -74,14 +75,15 @@ namespace BatchBaker
             e.Handled = true;
         }
 
-        // Writes the full error to crash.log next to the exe (falling back to the
+        // Writes the full error to crash.log in %LocalAppData%\BatchBaker (falling back to the
         // temp folder if that isn't writable) and shows it in a message box.
         private static void ReportError(string title, Exception ex)
         {
             string details = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}";
-            string logPath = Path.Combine(AppContext.BaseDirectory, "crash.log");
+            string logPath = Path.Combine(BatchBaker.Data.AppDbContext.DataFolder, "crash.log");
             try
             {
+                Directory.CreateDirectory(BatchBaker.Data.AppDbContext.DataFolder);
                 File.AppendAllText(logPath, details);
             }
             catch

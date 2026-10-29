@@ -29,6 +29,26 @@ namespace BatchBaker
         private readonly ActiveDirectory activeDirectory;
         private readonly ADService adService; 
         private readonly PDFService pdfService;
+
+        // The users being imported and edited. Gem always works on this list,
+        // whichever view is shown.
+        private List<People> batchPeople = new();
+
+        private enum UserView { Batch, Saved, Directory }
+        private UserView currentView = UserView.Batch;
+
+        // Users read from Active Directory, kept until Opdatér or the next AD run.
+        private List<UserOverview>? directoryUsers;
+        private List<string> directoryFailedOus = new();
+
+        // Tree node keys: everything, a sector, a department, or unmatched departments.
+        private const string AllNode = "*";
+        private const string UnknownNode = "?";
+        private string selectedNode = AllNode;
+
+        private bool ready;          // false while the window is still being built
+        private bool buildingTree;   // ignores selection events while the tree is rebuilt
+
         public MainWindow(IOptions<ActiveDirectory> activeDirectoryOptions, ADService adService, PDFService pdfService)
         {
             InitializeComponent();
@@ -36,21 +56,7 @@ namespace BatchBaker
             this.adService = adService;
             this.pdfService = pdfService;
 
-            PropertyInfo[] properties = typeof(ADDepartments).GetProperties();
-            foreach (PropertyInfo property in properties)
-            {
-                string propertyName = property.Name;
-                string propertyValue = property.GetValue(activeDirectory.Departments)?.ToString() ?? "null";
-                Console.WriteLine($"{propertyName}: {propertyValue}");
-                
-                var exists = adService.DoesOuExist(propertyValue);
-                if (!exists)
-                {
-                    MessageBox.Show("OU'en findes ikke i Active Directory: " + propertyValue, "Kontrol af OU", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-
-                // MessageBox.Show($"OU '{propertyName}' with DN '{propertyValue}' exists: {exists}", "OU Existence Check", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
+            CheckDomainAndOus(reportSuccess: false);
 
             //var programmersOuexists = adService.DoesOuExist(departments.Data_Programmers);
             //var infrastructureOuexists = adService.DoesOuExist(departments.Data_Infrastructure);
@@ -75,7 +81,42 @@ namespace BatchBaker
             var import = dbContext.ImportSets.Include(i => i.People).OrderByDescending(i => i.ImportDate).FirstOrDefault();
             if (import != null)
             {
-                ListViewPeople.ItemsSource = import.People;
+                batchPeople = import.People;
+            }
+
+            ready = true;
+            ViewSelector.SelectedIndex = 0; // shows the batch
+        }
+
+        // Warns if the computer isn't in a domain or a department OU can't be found,
+        // in one message rather than one box per OU. At startup only problems are
+        // reported; from the Administrér menu a clean result is confirmed too.
+        private void CheckDomainAndOus(bool reportSuccess)
+        {
+            if (string.IsNullOrEmpty(activeDirectory.Domain))
+            {
+                MessageBox.Show("Computeren er ikke medlem af et domæne, så brugere kan ikke oprettes i Active Directory. Angiv domænet under ActiveDirectory:Domain i appsettings.json, hvis det ikke findes automatisk.",
+                    "Kontrol af domæne", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var missingOus = adService.DepartmentLayout
+                .Select(d => d.Ou)
+                .Where(ou => !adService.DoesOuExist(ou))
+                .ToList();
+            if (missingOus.Count > 0)
+            {
+                MessageBox.Show($"Disse OU'er findes ikke i domænet '{activeDirectory.Domain}':{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, missingOus)}",
+                    "Kontrol af OU", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            else if (reportSuccess)
+            {
+                string note = string.Empty;
+#if DEBUG
+                note = $"{Environment.NewLine}{Environment.NewLine}(Debug-build: OU'erne tjekkes ikke rigtigt.)";
+#endif
+                MessageBox.Show($"Domæne: {activeDirectory.Domain}{Environment.NewLine}Alle {adService.DepartmentLayout.Count} afdelings-OU'er blev fundet.{note}",
+                    "Kontrol af domæne og OU'er", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -108,7 +149,9 @@ namespace BatchBaker
 
         private void OnSaveClicked(object sender, RoutedEventArgs e)
         {
-            if (ListViewPeople.ItemsSource is not List<People> people || people.Count == 0)
+            var people = batchPeople;
+            ShowBatchView(); // so the results of the save are visible
+            if (people.Count == 0)
             {
                 MessageBox.Show("Der er ingen poster at gemme. Importér en CSV-fil først.", "Intet at gemme", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -250,9 +293,7 @@ namespace BatchBaker
                 }
                 catch (Exception ex)
                 {
-                    string reason = ex.InnerException == null
-                        ? $"{ex.GetType().Name}: {ex.Message}"
-                        : $"{ex.GetType().Name}: {ex.Message} ({ex.InnerException.Message})";
+                    string reason = DescribeADError(ex);
                     person.ImportSuccess = false;
                     person.ImportError = reason;
                     LogAction("AD-bruger fejlede", $"{person.Username} i {ou}: {reason}");
@@ -263,10 +304,11 @@ namespace BatchBaker
             int failed = people.Count - created;
             LogAction("AD-oprettelse afsluttet", $"{created} oprettet, {failed} fejlede eller sprunget over.");
 
-            ListViewPeople.Items.Refresh();
+            directoryUsers = null; // AD has changed, so read it again next time it's shown
+            ShowView();
             string summary = failed == 0
                 ? $"Oprettede {created} bruger(e) i Active Directory."
-                : $"Oprettede {created} bruger(e). {failed} fejlede eller blev sprunget over. Se kolonnen Årsag eller Hjælp > Log for detaljer.";
+                : $"Oprettede {created} bruger(e). {failed} fejlede eller blev sprunget over. Se kolonnen Årsag eller menuen Log for detaljer.";
             if (pdfFolder != null)
             {
                 summary += $"{Environment.NewLine}{Environment.NewLine}{pdfCount} PDF(er) gemt i {pdfFolder}";
@@ -325,6 +367,27 @@ namespace BatchBaker
 
             using var existing = Principal.FindByIdentity(context, IdentityType.Name, fullName);
             return existing == null ? fullName : $"{fullName} ({person.Username})";
+        }
+
+        // AD's own message is often just "A constraint violation occurred". The
+        // extended message underneath names the attribute it rejected, e.g.
+        // "... Att 90290 (userPrincipalName)", so that's included when present.
+        private static string DescribeADError(Exception ex)
+        {
+            string reason = $"{ex.GetType().Name}: {ex.Message.Trim()}";
+            for (Exception? inner = ex.InnerException; inner != null; inner = inner.InnerException)
+            {
+                if (inner.Message.Trim() != ex.Message.Trim())
+                {
+                    reason += $" ({inner.Message.Trim()})";
+                }
+                if (inner is System.DirectoryServices.DirectoryServicesCOMException com
+                    && !string.IsNullOrWhiteSpace(com.ExtendedErrorMessage))
+                {
+                    reason += $" [{com.ExtendedErrorMessage.Trim().TrimEnd('\0')}]";
+                }
+            }
+            return reason;
         }
 
         // AD rejects empty strings for these attributes; null leaves them unset.
@@ -407,20 +470,17 @@ namespace BatchBaker
                 return;
             }
 
-            if (ListViewPeople.ItemsSource is not List<People> people)
-            {
-                people = new List<People>();
-                ListViewPeople.ItemsSource = people;
-            }
-            people.Add(person);
-            RevalidateGrid(people);
+            batchPeople.Add(person);
+            ShowBatchView();
+            RevalidateGrid(batchPeople);
             LogAction("Bruger tilføjet", person.Username);
         }
 
         // Opens the clicked row in the editor, e.g. to fix a rejected row in place.
         private void ListViewPeople_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (ListViewPeople.SelectedItem is not People person || ListViewPeople.ItemsSource is not List<People> people)
+            // Only the batch is editable; the overview views are read-only.
+            if (currentView != UserView.Batch || ListViewPeople.SelectedItem is not People person)
             {
                 return;
             }
@@ -428,7 +488,7 @@ namespace BatchBaker
             var editor = new Editor(person, adService, isNew: false) { Owner = this };
             if (editor.ShowDialog() == true)
             {
-                RevalidateGrid(people);
+                RevalidateGrid(batchPeople);
                 LogAction("Bruger redigeret", person.Username);
             }
         }
@@ -439,7 +499,261 @@ namespace BatchBaker
         {
             MainWindowHelpers.ValidateForDuplicateUsernames(people, GetExistingUsernames(people));
             MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
-            ListViewPeople.Items.Refresh();
+            MainWindowHelpers.ValidateForActiveDirectory(people);
+            ShowView();
+        }
+
+        // --- Views and the department tree ---
+
+        private void ShowBatchView()
+        {
+            if (ViewSelector.SelectedIndex != 0)
+            {
+                ViewSelector.SelectedIndex = 0; // the SelectionChanged handler shows it
+            }
+            else
+            {
+                ShowView();
+            }
+        }
+
+        private async void ViewSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!ready)
+            {
+                return;
+            }
+
+            currentView = (UserView)Math.Max(0, ViewSelector.SelectedIndex);
+            RefreshButton.Visibility = currentView == UserView.Batch ? Visibility.Collapsed : Visibility.Visible;
+
+            if (currentView == UserView.Directory && directoryUsers == null)
+            {
+                await LoadDirectoryUsersAsync();
+            }
+            ShowView();
+        }
+
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (currentView == UserView.Directory)
+            {
+                await LoadDirectoryUsersAsync();
+            }
+            ShowView();
+        }
+
+        // Puts the chosen view's users in the grid, rebuilds the tree with fresh
+        // counts and applies the selected department filter.
+        private void ShowView()
+        {
+            if (!ready)
+            {
+                return;
+            }
+
+            System.Collections.IList items;
+            if (currentView == UserView.Batch)
+            {
+                ListViewPeople.View = (ViewBase)FindResource("BatchGridView");
+                items = batchPeople;
+            }
+            else
+            {
+                ListViewPeople.View = (ViewBase)FindResource("OverviewGridView");
+                items = currentView == UserView.Saved ? LoadSavedUsers() : directoryUsers ?? new List<UserOverview>();
+            }
+
+            ListViewPeople.ItemsSource = items;
+            var departments = items.Cast<object>().Select(DepartmentOf).ToList();
+            BuildTree(departments);
+            ApplyFilter(items.Count);
+        }
+
+        // Every user BatchBaker has saved, from all imports, newest import first.
+        private List<UserOverview> LoadSavedUsers()
+        {
+            return dbContext.ImportSets
+                .Include(i => i.People)
+                .OrderByDescending(i => i.ImportDate)
+                .AsEnumerable()
+                .SelectMany(i => i.People.Select(p => new UserOverview
+                {
+                    Status = p.CreatedInAD ? "Oprettet i AD" : "Ikke oprettet i AD",
+                    FirstName = p.FirstName,
+                    LastName = p.LastName,
+                    Username = p.Username,
+                    Email = p.Email,
+                    Department = p.Department,
+                    Country = p.Country,
+                    PhoneNumber = p.PhoneNumber,
+                    Created = i.ImportDate.ToString("dd-MM-yyyy HH:mm")
+                }))
+                .ToList();
+        }
+
+        private async Task LoadDirectoryUsersAsync()
+        {
+            if (string.IsNullOrEmpty(activeDirectory.Domain))
+            {
+                directoryUsers = new List<UserOverview>();
+                directoryFailedOus = new List<string>();
+                return;
+            }
+
+            StatusText.Text = "Henter brugere fra Active Directory…";
+            RefreshButton.IsEnabled = false;
+            ViewSelector.IsEnabled = false;
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                var (users, failedOus) = await Task.Run(adService.GetDirectoryUsers);
+                directoryUsers = users;
+                directoryFailedOus = failedOus;
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                RefreshButton.IsEnabled = true;
+                ViewSelector.IsEnabled = true;
+            }
+        }
+
+        // The department a row belongs to, in its official spelling, or null if it
+        // matches none (e.g. a misspelled department in the batch).
+        private string? DepartmentOf(object item) => item switch
+        {
+            People p => adService.MatchDepartment(p.Department),
+            UserOverview u => adService.MatchDepartment(u.Department),
+            _ => null
+        };
+
+        // Rebuilds the tree as All > sectors > departments, each with a user count,
+        // and selects the node that was selected before.
+        private void BuildTree(List<string?> departments)
+        {
+            buildingTree = true;
+            try
+            {
+                DepartmentTree.Items.Clear();
+                var layout = adService.DepartmentLayout;
+
+                var root = MakeNode($"Alle afdelinger ({departments.Count})", AllNode);
+                foreach (var sector in layout.Select(d => d.Sector).Distinct())
+                {
+                    var sectorDepartments = layout.Where(d => d.Sector == sector).Select(d => d.Department).ToList();
+                    int sectorCount = departments.Count(d => d != null && sectorDepartments.Contains(d));
+                    var sectorNode = MakeNode($"{sector} ({sectorCount})", "sector:" + sector);
+                    foreach (string department in sectorDepartments)
+                    {
+                        sectorNode.Items.Add(MakeNode($"{department} ({departments.Count(d => d == department)})", "dept:" + department));
+                    }
+                    root.Items.Add(sectorNode);
+                }
+
+                int unknown = departments.Count(d => d == null);
+                if (unknown > 0)
+                {
+                    root.Items.Add(MakeNode($"Ukendt afdeling ({unknown})", UnknownNode));
+                }
+                DepartmentTree.Items.Add(root);
+
+                var selected = FindNode(root, selectedNode) ?? root;
+                selectedNode = (string)selected.Tag;
+                selected.IsSelected = true;
+            }
+            finally
+            {
+                buildingTree = false;
+            }
+
+            static TreeViewItem MakeNode(string header, string key) => new() { Header = header, Tag = key, IsExpanded = true };
+        }
+
+        private static TreeViewItem? FindNode(TreeViewItem node, string key)
+        {
+            if ((string)node.Tag == key)
+            {
+                return node;
+            }
+            return node.Items.OfType<TreeViewItem>().Select(child => FindNode(child, key)).FirstOrDefault(found => found != null);
+        }
+
+        private void DepartmentTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            if (buildingTree || DepartmentTree.SelectedItem is not TreeViewItem node)
+            {
+                return;
+            }
+            selectedNode = (string)node.Tag;
+            ApplyFilter(ListViewPeople.ItemsSource is System.Collections.IList list ? list.Count : 0);
+        }
+
+        // Shows only the rows in the selected sector or department.
+        private void ApplyFilter(int total)
+        {
+            var layout = adService.DepartmentLayout;
+            string node = selectedNode;
+            ListViewPeople.Items.Filter = item =>
+            {
+                string? department = DepartmentOf(item);
+                if (node == AllNode) return true;
+                if (node == UnknownNode) return department == null;
+                if (node.StartsWith("dept:")) return department == node.Substring(5);
+                if (node.StartsWith("sector:")) return layout.Any(d => d.Sector == node.Substring(7) && d.Department == department);
+                return true;
+            };
+
+            string status = $"Viser {ListViewPeople.Items.Count} af {total} bruger(e)";
+            if (currentView == UserView.Directory)
+            {
+                if (string.IsNullOrEmpty(activeDirectory.Domain))
+                {
+                    status = "Computeren er ikke medlem af et domæne, så Active Directory kan ikke vises.";
+                }
+                else if (directoryFailedOus.Count > 0)
+                {
+                    status += $" – {directoryFailedOus.Count} OU('er) kunne ikke læses (se Administrér > Kontrollér domæne og OU'er)";
+                }
+            }
+            StatusText.Text = status;
+        }
+
+        // --- Administrér, Hjælp ---
+
+        private void OnOpenPdfFolderClicked(object sender, RoutedEventArgs e)
+            => OpenFolder(pdfService.BaseFolder);
+
+        private void OnOpenDataFolderClicked(object sender, RoutedEventArgs e)
+            => OpenFolder(AppDbContext.DataFolder);
+
+        private void OpenFolder(string folder)
+        {
+            try
+            {
+                System.IO.Directory.CreateDirectory(folder);
+                System.Diagnostics.Process.Start("explorer.exe", $"\"{folder}\"");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Mappen kunne ikke åbnes: {ex.Message}", "Fejl", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OnCheckOusClicked(object sender, RoutedEventArgs e)
+            => CheckDomainAndOus(reportSuccess: true);
+
+        private void OnAboutClicked(object sender, RoutedEventArgs e)
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version;
+            string domain = string.IsNullOrEmpty(activeDirectory.Domain) ? "(intet domæne fundet)" : activeDirectory.Domain;
+            MessageBox.Show(
+                $"BatchBaker {version?.ToString(3)}{Environment.NewLine}{Environment.NewLine}" +
+                $"Opretter brugere i Active Directory ud fra CSV-filer, med genererede adgangskoder og en login-PDF til hver bruger.{Environment.NewLine}{Environment.NewLine}" +
+                $"Domæne: {domain}{Environment.NewLine}" +
+                $"Data: {AppDbContext.DataFolder}{Environment.NewLine}" +
+                $"PDF'er: {pdfService.BaseFolder}",
+                "Om BatchBaker", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void OnExitClicked(object sender, RoutedEventArgs e)
@@ -465,6 +779,7 @@ namespace BatchBaker
                     var existingUsernames = GetExistingUsernames(people);
                     MainWindowHelpers.ValidateForDuplicateUsernames(people, existingUsernames);
                     MainWindowHelpers.ValidateDepartments(people, d => adService.TryValidateDepartment(d, out _));
+                    MainWindowHelpers.ValidateForActiveDirectory(people);
 
                     //foreach (var person in people)
                     //{
@@ -481,7 +796,8 @@ namespace BatchBaker
                     var previewWindow = new ImportPreviewWindow(people, existingUsernames, adService) { Owner = this };
                     if (previewWindow.ShowDialog() == true)
                     {
-                        ListViewPeople.ItemsSource = previewWindow.ValidPeople;
+                        batchPeople = previewWindow.ValidPeople;
+                        ShowBatchView();
                         int skipped = people.Count - previewWindow.ValidPeople.Count;
                         string message = skipped > 0
                             ? $"Importerede {previewWindow.ValidPeople.Count} post(er). {skipped} ugyldige sprunget over."
