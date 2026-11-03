@@ -56,12 +56,13 @@ namespace BatchBaker
                 string[] lines = File.ReadAllLines(fullPath, Encoding.UTF8);
                 if (lines.Length == 0)
                 {
-                    return new List<People>();
+                    throw new FormatException("Filen er tom.");
                 }
 
                 // Excel saves CSV with the list separator from the regional settings,
                 // which is ';' on Danish setups, so use whichever the header row uses.
                 char separator = lines[0].Count(c => c == ';') > lines[0].Count(c => c == ',') ? ';' : ',';
+                ValidateCsvHeader(lines[0], separator);
 
                 // Skip header row and project each line as a Person. Rows that are
                 // empty or only separators are skipped: Excel writes formatted but
@@ -73,7 +74,7 @@ namespace BatchBaker
                     var fields = SplitCsvLine(line, separator);
                     if (fields.Count < 5)
                     {
-                        throw new FormatException($"CSV line does not contain the expected columns: {line}");
+                        throw new FormatException($"Denne række har for få kolonner: {line}");
                     }
                     // Missing trailing columns (e.g. an empty phone number, or the
                     // optional password column) are treated as empty.
@@ -131,7 +132,24 @@ namespace BatchBaker
             }
             catch (FormatException ex)
             {
-                throw new InvalidOperationException($"Error parsing CSV file: {ex.Message}");
+                throw new InvalidOperationException(ex.Message);
+            }
+        }
+
+        // Rows are read by column position, so a file with its columns missing or in
+        // another order would put data in the wrong fields. The 9th column (password)
+        // is optional and ignored, so its name doesn't matter.
+        private static void ValidateCsvHeader(string headerLine, char separator)
+        {
+            string[] expected = { "Fornavn", "Efternavn", "Brugernavn", "Email", "Afdeling", "Land", "Titel", "Telefonnummer" };
+            var found = SplitCsvLine(headerLine, separator).Select(column => column.Trim()).ToList();
+
+            if (!found.Take(expected.Length).SequenceEqual(expected, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new FormatException(
+                    $"Kolonnerne i filens første række er ikke som forventet.{Environment.NewLine}{Environment.NewLine}" +
+                    $"Forventet: {string.Join(", ", expected)}{Environment.NewLine}" +
+                    $"Fundet: {string.Join(", ", found)}");
             }
         }
 
@@ -203,12 +221,12 @@ namespace BatchBaker
                 if (existing.Contains(username))
                 {
                     person.ImportSuccess = false;
-                    person.ImportError = "Username already exists in the database";
+                    person.ImportError = "Brugernavnet findes allerede i databasen";
                 }
                 else if (occurrences[username] > 1)
                 {
                     person.ImportSuccess = false;
-                    person.ImportError = "Duplicate username within this file";
+                    person.ImportError = "Brugernavnet findes flere gange i denne batch";
                 }
                 else
                 {

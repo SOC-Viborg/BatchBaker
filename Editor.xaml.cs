@@ -46,6 +46,9 @@ namespace BatchBaker
                 ? MainWindowHelpers.GenerateNewPassword()
                 : person.TemporaryPassword;
 
+            ForcePasswordChangeBox.IsChecked = !person.SkipPasswordChange;
+            ForcePasswordChangeBox.IsEnabled = !person.CreatedInAD; // only applies when the account is created
+
             // A dropdown instead of free text, so the department always matches an OU.
             // A misspelled value matches nothing and is left blank for the user to pick.
             DepartmentBox.ItemsSource = adService.DepartmentNames;
@@ -90,6 +93,7 @@ namespace BatchBaker
             _person.Country = CountryBox.Text.Trim();
             _person.PhoneNumber = PhoneBox.Text.Trim();
             _person.TemporaryPassword = PasswordBox.Text.Trim();
+            _person.SkipPasswordChange = ForcePasswordChangeBox.IsChecked != true;
 
             DialogResult = true;
         }

@@ -10,7 +10,7 @@ It works in any domain with the expected OU layout: the domain is detected from 
 - **Fix rows in place.** Double-click a rejected row to correct it, so you don't have to edit the CSV and import it again.
 - **Add a single user** without a CSV file.
 - **Department-based placement.** Each user is created in the OU that matches their department.
-- **Generated passwords.** Every user gets a new temporary password and must change it at first login.
+- **Generated passwords.** Every user gets a new temporary password. A change at first login is forced by default, and can be turned off per user in the editor.
 - **Login PDFs.** One PDF per created user, with their username and temporary password.
 - **Department overview.** Browse the current batch, everyone BatchBaker has created, or the live accounts in Active Directory, by sector and department.
 - **Activity log** of imports, edits, saves and every account created or failed.
@@ -22,6 +22,10 @@ The user interface is in Danish.
 - Windows 10 or 11, on a machine joined to the domain.
 - [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (the installer checks for it).
 - A Windows account with permission to create user accounts and reset passwords in the department OUs. BatchBaker connects to Active Directory as the user running it.
+
+## User guide
+
+[Brugervejledning.md](Brugervejledning.md) is the short user guide in Danish, including the CSV format and the Active Directory settings. It's installed next to the program, along with the Excel template.
 
 ## Installation
 
@@ -44,14 +48,14 @@ A row is invalid if:
 - the same username appears more than once in the file, or
 - its department doesn't match one of the known departments.
 
-**Double-click an invalid row** to open it in the editor and fix it. The row is checked again when you save it. Then click **Importér gyldige rækker** to bring the valid rows into the main window. Invalid rows are left out.
+**Double-click an invalid row** to open it in the editor and fix it. The row is checked again when you save it. Then click **Importér gyldige rækker** to bring the valid rows into the main window. Invalid rows are left out. To drop rows instead, select one or several and click **Kassér valgte**.
 
 ### 2. Add or edit a single user
 
 - **Filer > Tilføj bruger** opens an empty form for one new user.
 - **Double-click a row** in the main window to edit it.
 
-In the editor, the department is chosen from a list, so it can't be misspelled. Username, department and temporary password are required. **Generér** creates a new password.
+In the editor, the department is chosen from a list, so it can't be misspelled. Username, department and temporary password are required. **Generér** creates a new password. **Tving skift af adgangskode ved første login** is on by default; untick it to skip the forced change for that user, including users from a CSV.
 
 Editing a user who has already been created in Active Directory only changes BatchBaker's own records, not the account in Active Directory.
 
@@ -67,10 +71,10 @@ For each user, BatchBaker:
 
 - creates the account in the OU for their department,
 - sets their name, email, phone number, department and country,
-- sets the temporary password and requires a password change at first login, and
+- first checks that the username and logon name aren't already taken in the domain,
 - generates a PDF with their username and temporary password.
 
-Each user is handled separately, so one failure doesn't stop the rest. Failed users are marked **Ugyldig** with the reason in **Årsag**. Fix them and choose **Gem** again to retry. Users that were already created are skipped.
+Each user is handled separately, so one failure doesn't stop the rest. Failed users are marked **Ugyldig** with the reason in **Årsag**. When rejected users exist, **Gem** reopens the review window with just those users, both before saving and after the Active Directory run. Double-click a row to correct it, or select rows and click **Kassér valgte** for true duplicates. **Fortsæt** carries on, and after an Active Directory run only the corrected rows are tried again. **Annullér** keeps every row as it is. Discarding removes the row from BatchBaker only, never an account in Active Directory. Users that were already created are skipped. If something fails after an account is created (for example the PDF), the user stays marked as created and the problem is noted in **Årsag**. If the connection to Active Directory fails before the run starts, no users are attempted and you get one clear message.
 
 When it's done, BatchBaker shows a summary and opens the folder with the PDFs.
 
@@ -175,10 +179,19 @@ Settings are in `appsettings.json` next to `BatchBaker.exe`:
 ```
 
 - **`ActiveDirectory:Domain`**: the domain users are created in. Leave it empty to use the domain the computer is joined to, or set it (for example `"SOC.Viborg"`) to override. Also used for each user's logon name (`username@SOC.Viborg`).
+- **`ActiveDirectory:DomainControllers`**: the Domain Controllers to use, tried in order until one answers, for example `["dc01.firma.local", "dc02.firma.local"]`. Leave it empty to let Windows choose. It is re-checked at startup and before each run. On a computer that isn't domain-joined, also set `Domain`.
 - **`ActiveDirectory:Departments`**: the OU for each department, without the domain part. The domain's `DC=...` is added automatically, so `OU=IT-Support,OU=Data,OU=Afdelinger,OU=SKP` becomes `OU=IT-Support,OU=Data,OU=Afdelinger,OU=SKP,DC=SOC,DC=Viborg`. A full path that already ends in `DC=...` is used as it is. Change these if the OU structure changes. BatchBaker warns at startup if any of them can't be found.
 - **`PDF:FilePath`**: where to save PDFs. Leave empty for the `PDF` folder on the Desktop, or set a folder such as `"D:\\BatchBaker\\PDF"`. Environment variables like `%USERPROFILE%` can be used.
 
 Restart BatchBaker after changing the file.
+
+## Connecting to Active Directory
+
+BatchBaker runs locally and connects as the signed-in Windows user, through `System.DirectoryServices` and `System.DirectoryServices.AccountManagement` (LDAP). It never asks for or stores an administrator password.
+
+The account needs permission to create and read user objects and reset passwords in the department OUs. Delegating those rights on `OU=Afdelinger` is enough; it doesn't have to be a Domain Admin.
+
+Connection, permission, password policy and duplicate-name errors are shown in Danish in the UI. The **Log** keeps AD's full technical error, including the extended code.
 
 ## Files and data
 

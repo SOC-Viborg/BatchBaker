@@ -58,7 +58,10 @@ namespace BatchBaker.Services
                             x.Spacing(20);
                             x.Item().Text($"Username: {person.Username}");
                             x.Item().Text($"Temporary Password: {person.TemporaryPassword}");
-                            x.Item().Text("Hust at skifte dit password ved første login.");
+                            if (!person.SkipPasswordChange)
+                            {
+                                x.Item().Text("Husk at skifte dit password ved første login.");
+                            }
                         });
                     page.Footer()
                         .AlignCenter()
