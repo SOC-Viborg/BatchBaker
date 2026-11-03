@@ -19,6 +19,8 @@ namespace BatchBaker.Models
         public string ImportError { get; set; } = string.Empty;
         // Set once the account exists in AD, so saving again doesn't try to recreate it.
         public bool CreatedInAD { get; set; } = false;
+        // A password change at first login is forced unless this is ticked off in the editor.
+        public bool SkipPasswordChange { get; set; } = false;
 
         public int ImportSetId { get; set; }
         [NotMapped]

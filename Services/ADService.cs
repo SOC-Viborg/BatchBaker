@@ -2,41 +2,179 @@
 using BatchBaker.Models;
 using Microsoft.Extensions.Options;
 using System.DirectoryServices;
+using System.DirectoryServices.AccountManagement;
 using System.Reflection;
 
 namespace BatchBaker.Services
 {
     public class ADService
     {
+        public enum OuStatus { Found, Missing, Unreadable }
+
         public ADDepartments departments { get; set; } = default!;
+        private readonly ActiveDirectory settings;
+
+        // The Domain Controller (or, if none are listed in the settings, the domain
+        // name) that BatchBaker talks to.
+        public string Server { get; private set; }
+
         public ADService(IOptions<ActiveDirectory> activeDirectoryOptions)
         {
-            departments = activeDirectoryOptions.Value.Departments;
+            settings = activeDirectoryOptions.Value;
+            departments = settings.Departments;
+            Server = ConfiguredServers().FirstOrDefault() ?? string.Empty;
         }
 
-        public bool DoesOuExist(string distinguishedName)
+        private List<string> ConfiguredServers()
+        {
+            var controllers = settings.DomainControllers.Where(dc => !string.IsNullOrWhiteSpace(dc)).Select(dc => dc.Trim()).ToList();
+            if (controllers.Count > 0)
+            {
+                return controllers;
+            }
+            return string.IsNullOrWhiteSpace(settings.Domain) ? new List<string>() : new List<string> { settings.Domain };
+        }
+
+        private string LdapPath(string distinguishedName)
+            => string.IsNullOrEmpty(Server) ? $"LDAP://{distinguishedName}" : $"LDAP://{Server}/{distinguishedName}";
+
+        // Tries the listed Domain Controllers in order and uses the first that answers.
+        // Returns null on success, or a message saying why none could be reached.
+        public string? ConnectToDomainController()
+        {
+            var servers = ConfiguredServers();
+            if (servers.Count == 0)
+            {
+                return "Der er intet domæne eller nogen domænecontroller at forbinde til. Angiv dem i appsettings.json.";
+            }
+
+            var failures = new List<string>();
+            foreach (string server in servers)
+            {
+                try
+                {
+                    using var rootDse = new DirectoryEntry($"LDAP://{server}/RootDSE");
+                    _ = rootDse.NativeObject; // forces the connection
+                    Server = server;
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{server}: {DescribeError(ex)}");
+                }
+            }
+            return $"Der kunne ikke oprettes forbindelse til Active Directory.{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, failures)}";
+        }
+
+        public OuStatus CheckOu(string distinguishedName)
         {
 #if DEBUG
-            return true; // Always return true in debug mode for testing purposes
-#else 
-            // Eksempel: "OU=Salg,DC=firma,DC=local"
-            string path = $"LDAP://{distinguishedName}";
-
+            return OuStatus.Found; // Always found in debug mode for testing purposes
+#else
             try
             {
                 // Windows logger automatisk ind med applikationens egne rettigheder
-                using (var entry = new DirectoryEntry(path))
-                {
-                    // Tvinger AD til at tjekke om stien findes i virkeligheden
-                    string schema = entry.SchemaClassName;
-                    return schema.Equals("organizationalUnit", StringComparison.OrdinalIgnoreCase);
-                }
+                using var entry = new DirectoryEntry(LdapPath(distinguishedName));
+                // Tvinger AD til at tjekke om stien findes i virkeligheden
+                string schema = entry.SchemaClassName;
+                return schema.Equals("organizationalUnit", StringComparison.OrdinalIgnoreCase) ? OuStatus.Found : OuStatus.Missing;
             }
-            catch
+            catch (Exception ex)
             {
-                return false; // OU findes ikke, eller applikationen har ikke rettigheder til at læse den
+                return HasHResult(ex, ObjectNotFound) ? OuStatus.Missing : OuStatus.Unreadable;
             }
 #endif
+        }
+
+        // The distinguished name of an account already using this logon name or UPN
+        // anywhere in the domain, or null if both are free.
+        public string? FindExistingUser(string username, string userPrincipalName)
+        {
+            using var context = new PrincipalContext(ContextType.Domain, Server);
+            using var bySamAccountName = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, username);
+            if (bySamAccountName != null)
+            {
+                return bySamAccountName.DistinguishedName;
+            }
+            using var byUpn = UserPrincipal.FindByIdentity(context, IdentityType.UserPrincipalName, userPrincipalName);
+            return byUpn?.DistinguishedName;
+        }
+
+        private const int AccessDenied = unchecked((int)0x80070005);
+        private const int ServerNotOperational = unchecked((int)0x8007203A);
+        private const int ObjectNotFound = unchecked((int)0x80072030);
+
+        private static bool HasHResult(Exception ex, int hResult)
+        {
+            for (Exception? e = ex; e != null; e = e.InnerException)
+            {
+                if (e.HResult == hResult)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool HasException<T>(Exception ex) where T : Exception
+        {
+            for (Exception? e = ex; e != null; e = e.InnerException)
+            {
+                if (e is T)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // A clear Danish explanation of the common AD failures. Anything else falls back
+        // to AD's own text. The codes are checked rather than the message text, which
+        // depends on the language of Windows.
+        public static string DescribeError(Exception ex)
+        {
+            string details = ErrorDetails(ex);
+
+            if (HasException<PrincipalServerDownException>(ex) || HasHResult(ex, ServerNotOperational))
+            {
+                return "Der kan ikke oprettes forbindelse til domænecontrolleren. Tjek netværket og at serveren kører.";
+            }
+            if (HasException<UnauthorizedAccessException>(ex) || HasHResult(ex, AccessDenied) || details.Contains("INSUFF_ACCESS_RIGHTS"))
+            {
+                return "Manglende rettigheder: din Windows-konto må ikke udføre dette i Active Directory.";
+            }
+            if (details.Contains("000021C8"))
+            {
+                return "Logonnavnet (brugernavn@domæne) er allerede i brug af en anden konto i domænet.";
+            }
+            if (HasException<PrincipalExistsException>(ex))
+            {
+                return "Brugeren findes allerede i Active Directory.";
+            }
+            if (HasException<PasswordException>(ex) || details.Contains("0000052D"))
+            {
+                return "Adgangskoden opfylder ikke domænets adgangskodepolitik.";
+            }
+            return details;
+        }
+
+        // The full technical error, for the log. AD's specific reason (e.g. which
+        // attribute it rejected) is only in ExtendedErrorMessage.
+        public static string ErrorDetails(Exception ex)
+        {
+            string details = $"{ex.GetType().Name}: {ex.Message.Trim()}";
+            for (Exception? e = ex; e != null; e = e.InnerException)
+            {
+                if (e != ex && e.Message.Trim() != ex.Message.Trim())
+                {
+                    details += $" ({e.Message.Trim()})";
+                }
+                if (e is DirectoryServicesCOMException com && !string.IsNullOrWhiteSpace(com.ExtendedErrorMessage))
+                {
+                    details += $" [{com.ExtendedErrorMessage.Trim().TrimEnd('\0')}]";
+                }
+            }
+            return details;
         }
 
         // The department names a CSV (or the editor's dropdown) may use, in config order.
@@ -69,6 +207,8 @@ namespace BatchBaker.Services
         // stopping the rest.
         public (List<UserOverview> Users, List<string> FailedOus) GetDirectoryUsers()
         {
+            ConnectToDomainController(); // picks a working server; an unreachable one shows up in FailedOus
+
             var users = new List<UserOverview>();
             var failedOus = new List<string>();
 
@@ -76,7 +216,7 @@ namespace BatchBaker.Services
             {
                 try
                 {
-                    using var entry = new DirectoryEntry($"LDAP://{ou}");
+                    using var entry = new DirectoryEntry(LdapPath(ou));
                     using var searcher = new DirectorySearcher(entry, "(&(objectCategory=person)(objectClass=user))")
                     {
                         SearchScope = SearchScope.Subtree,

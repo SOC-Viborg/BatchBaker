@@ -10,6 +10,10 @@ namespace BatchBaker.Configuration
     {
         // Empty means "the domain this computer is joined to".
         public string Domain { get; set; } = string.Empty;
+
+        // Domain Controllers to use, tried in order. Empty means Windows picks one.
+        public List<string> DomainControllers { get; set; } = new();
+
         public ADDepartments Departments { get; set; } = new();
 
         // Fills in the domain and turns each department's OU path into a full

@@ -100,27 +100,43 @@ namespace BatchBaker
                 return;
             }
 
-            var missingOus = adService.DepartmentLayout
-                .Select(d => d.Ou)
-                .Where(ou => !adService.DoesOuExist(ou))
-                .ToList();
-            if (missingOus.Count > 0)
+            string? connectionError = adService.ConnectToDomainController();
+            if (connectionError != null)
             {
-                MessageBox.Show($"Disse OU'er findes ikke i domænet '{activeDirectory.Domain}':{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, missingOus)}",
-                    "Kontrol af OU", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(connectionError, "Kontrol af domæne", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string newLine = Environment.NewLine;
+            var ous = adService.DepartmentLayout.Select(d => (d.Ou, Status: adService.CheckOu(d.Ou))).ToList();
+            var missing = ous.Where(o => o.Status == ADService.OuStatus.Missing).Select(o => o.Ou).ToList();
+            var unreadable = ous.Where(o => o.Status == ADService.OuStatus.Unreadable).Select(o => o.Ou).ToList();
+
+            if (missing.Count > 0 || unreadable.Count > 0)
+            {
+                string message = string.Empty;
+                if (missing.Count > 0)
+                {
+                    message += $"Disse OU'er findes ikke i domænet '{activeDirectory.Domain}':{newLine}{string.Join(newLine, missing)}{newLine}{newLine}";
+                }
+                if (unreadable.Count > 0)
+                {
+                    message += $"Disse OU'er kunne ikke læses. Tjek din forbindelse og din Windows-kontos rettigheder:{newLine}{string.Join(newLine, unreadable)}";
+                }
+                MessageBox.Show(message.TrimEnd(), "Kontrol af OU", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             else if (reportSuccess)
             {
                 string note = string.Empty;
 #if DEBUG
-                note = $"{Environment.NewLine}{Environment.NewLine}(Debug-build: OU'erne tjekkes ikke rigtigt.)";
+                note = $"{newLine}{newLine}(Debug-build: OU'erne tjekkes ikke rigtigt.)";
 #endif
-                MessageBox.Show($"Domæne: {activeDirectory.Domain}{Environment.NewLine}Alle {adService.DepartmentLayout.Count} afdelings-OU'er blev fundet.{note}",
+                MessageBox.Show($"Domæne: {activeDirectory.Domain}{newLine}Server: {adService.Server}{newLine}Alle {ous.Count} afdelings-OU'er blev fundet.{note}",
                     "Kontrol af domæne og OU'er", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
-        // Records a timestamped entry for the activity log, viewable from Help > Logs.
+        // Records a timestamped entry for the activity log, viewable from the Log menu.
         private void LogAction(string action, string details)
         {
             dbContext.ActivityLogs.Add(new ActivityLog
@@ -159,6 +175,17 @@ namespace BatchBaker
 
             // Re-checked here because rows may have been edited or added since import.
             RevalidateGrid(people);
+
+            // Rejected rows are shown right away, to be fixed or discarded.
+            var rejected = people.Where(p => !p.ImportSuccess && !p.CreatedInAD).ToList();
+            if (rejected.Count > 0 && ReviewRejectedUsers(rejected, rejectedByAD: false) == null)
+            {
+                return;
+            }
+            if (people.Count == 0)
+            {
+                return; // everything was discarded
+            }
 
             var validPeople = people.Where(p => p.ImportSuccess).ToList();
             int skipped = people.Count - validPeople.Count;
@@ -215,9 +242,62 @@ namespace BatchBaker
             var saveToAD = MessageBox.Show($"Gemt i databasen. Vil du også oprette {pending.Count} bruger(e) i Active Directory?", "Opret i Active Directory", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (saveToAD == MessageBoxResult.Yes)
             {
-                SaveUsersToActiveDirectory(pending);
-                dbContext.SaveChanges(); // stores each row's AD result (CreatedInAD, Status, Årsag)
+                // Users AD rejects are shown for fixing or discarding. Only the rows that
+                // were corrected are tried again, so an unchanged row can't fail in a loop.
+                var attempt = pending;
+                while (attempt.Count > 0)
+                {
+                    SaveUsersToActiveDirectory(attempt);
+                    dbContext.SaveChanges(); // stores each row's AD result (CreatedInAD, Status, Årsag)
+
+                    var failed = attempt.Where(p => !p.ImportSuccess && !p.CreatedInAD).ToList();
+                    if (failed.Count == 0)
+                    {
+                        break;
+                    }
+
+                    var review = ReviewRejectedUsers(failed, rejectedByAD: true);
+                    if (review == null)
+                    {
+                        break;
+                    }
+                    attempt = review.EditedPeople.Where(p => p.ImportSuccess).ToList();
+                    dbContext.SaveChanges(); // stores the corrections
+                }
             }
+        }
+
+        // Opens the rejected rows in the import window. Discards are applied when the
+        // user continues; Annullér keeps every row. Returns null if the user cancelled.
+        private ImportPreviewWindow? ReviewRejectedUsers(List<People> rejected, bool rejectedByAD)
+        {
+            // A row may not take a username used by the rest of the batch or the database.
+            var existingUsernames = GetExistingUsernames(rejected);
+            existingUsernames.AddRange(batchPeople.Where(p => p.Id == 0 && !rejected.Contains(p)).Select(p => p.Username));
+
+            var review = new ImportPreviewWindow(new List<People>(rejected), existingUsernames, adService, reviewMode: true, rejectedByAD: rejectedByAD) { Owner = this };
+            if (review.ShowDialog() != true)
+            {
+                ShowView();
+                return null;
+            }
+
+            foreach (var person in review.DiscardedPeople)
+            {
+                batchPeople.Remove(person);
+                if (person.Id != 0)
+                {
+                    dbContext.People.Remove(person);
+                }
+                LogAction("Bruger kasseret", $"{person.Username}: {person.ImportError}");
+            }
+            foreach (var person in review.EditedPeople)
+            {
+                LogAction("Bruger rettet", person.Username);
+            }
+
+            ShowView();
+            return review;
         }
 
         // Creates each person in the OU matching their department. Every row is
@@ -225,7 +305,18 @@ namespace BatchBaker
         // is written to the activity log and the grid's Status/Reason columns.
         private void SaveUsersToActiveDirectory(List<People> people)
         {
-            LogAction("AD-oprettelse startet", $"{people.Count} bruger(e), domæne '{activeDirectory.Domain}'.");
+            // Checked first, so a connection problem gives one clear message instead of
+            // the same error on every row.
+            string? connectionError = adService.ConnectToDomainController();
+            if (connectionError != null)
+            {
+                LogAction("AD-forbindelse fejlede", connectionError);
+                MessageBox.Show($"{connectionError}{Environment.NewLine}{Environment.NewLine}Ingen brugere blev oprettet. De er gemt i databasen, så du kan prøve igen med Gem.",
+                    "Active Directory", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            LogAction("AD-oprettelse startet", $"{people.Count} bruger(e), domæne '{activeDirectory.Domain}', server '{adService.Server}'.");
             int pdfCount = 0;
             string? pdfFolder = null; // created on the first PDF, so a run with no PDFs leaves no empty folder
 
@@ -241,7 +332,19 @@ namespace BatchBaker
 
                 try
                 {
-                    using var context = new PrincipalContext(ContextType.Domain, activeDirectory.Domain, ou);
+                    string userPrincipalName = $"{person.Username}@{activeDirectory.Domain}";
+
+                    // AD's own answer to a taken name is a cryptic constraint violation.
+                    string? existingUser = adService.FindExistingUser(person.Username, userPrincipalName);
+                    if (existingUser != null)
+                    {
+                        person.ImportSuccess = false;
+                        person.ImportError = $"Brugernavnet findes allerede i Active Directory: {existingUser}";
+                        LogAction("AD-bruger sprunget over", $"{person.Username}: {person.ImportError}");
+                        continue;
+                    }
+
+                    using var context = new PrincipalContext(ContextType.Domain, adService.Server, ou);
                     using var user = new UserPrincipal(context)
                     {
                         Name = GetObjectName(context, person),
@@ -251,31 +354,47 @@ namespace BatchBaker
                         DisplayName = NullIfBlank($"{person.FirstName} {person.LastName}".Trim()),
                         EmailAddress = NullIfBlank(person.Email),
                         VoiceTelephoneNumber = NullIfBlank(person.PhoneNumber),
-                        UserPrincipalName = $"{person.Username}@{activeDirectory.Domain}",
+                        UserPrincipalName = userPrincipalName,
                         Enabled = true
                     };
                     user.SetPassword(person.TemporaryPassword);
                     user.Save();
-                    user.ExpirePasswordNow(); // forces a password change at first logon
 
+                    // The account exists from here on, so it's recorded right away and any
+                    // failure below is only noted. Otherwise Gem would try to create it again.
                     person.CreatedInAD = true;
                     person.ImportSuccess = true;
                     person.ImportError = string.Empty;
                     LogAction("AD-bruger oprettet", $"{person.Username} i {ou}.");
 
-                    // The account exists at this point, so a failure here is reported
-                    // separately rather than marking the whole user as failed.
+                    void NoteProblem(string step, Exception ex)
+                    {
+                        string note = $"{step}: {ADService.DescribeError(ex)}";
+                        person.ImportError = string.IsNullOrEmpty(person.ImportError) ? $"Oprettet, men {note}" : $"{person.ImportError}; {note}";
+                        LogAction("Fejl efter AD-oprettelse", $"{person.Username}: {step}: {ADService.ErrorDetails(ex)}");
+                    }
+
+                    if (!person.SkipPasswordChange)
+                    {
+                        try
+                        {
+                            user.ExpirePasswordNow(); // forces a password change at first logon
+                        }
+                        catch (Exception ex)
+                        {
+                            NoteProblem("skift af adgangskode ved første login blev ikke sat", ex);
+                        }
+                    }
+
                     try
                     {
                         SetExtraAttributes(user, person);
                     }
                     catch (Exception ex)
                     {
-                        person.ImportError = $"Oprettet, men afdeling/land blev ikke sat: {ex.Message}";
-                        LogAction("AD-attributter fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
+                        NoteProblem("afdeling/land blev ikke sat", ex);
                     }
 
-                    // Same here: the account is already created, so a PDF failure is only noted.
                     try
                     {
                         pdfFolder ??= pdfService.CreateRunFolder();
@@ -285,18 +404,14 @@ namespace BatchBaker
                     }
                     catch (Exception ex)
                     {
-                        person.ImportError = string.IsNullOrEmpty(person.ImportError)
-                            ? $"Oprettet, men PDF fejlede: {ex.Message}"
-                            : $"{person.ImportError}; PDF fejlede: {ex.Message}";
-                        LogAction("PDF fejlede", $"{person.Username}: {ex.GetType().Name}: {ex.Message}");
+                        NoteProblem("PDF fejlede", ex);
                     }
                 }
                 catch (Exception ex)
                 {
-                    string reason = DescribeADError(ex);
                     person.ImportSuccess = false;
-                    person.ImportError = reason;
-                    LogAction("AD-bruger fejlede", $"{person.Username} i {ou}: {reason}");
+                    person.ImportError = ADService.DescribeError(ex);
+                    LogAction("AD-bruger fejlede", $"{person.Username} i {ou}: {ADService.ErrorDetails(ex)}");
                 }
             }
 
@@ -367,27 +482,6 @@ namespace BatchBaker
 
             using var existing = Principal.FindByIdentity(context, IdentityType.Name, fullName);
             return existing == null ? fullName : $"{fullName} ({person.Username})";
-        }
-
-        // AD's own message is often just "A constraint violation occurred". The
-        // extended message underneath names the attribute it rejected, e.g.
-        // "... Att 90290 (userPrincipalName)", so that's included when present.
-        private static string DescribeADError(Exception ex)
-        {
-            string reason = $"{ex.GetType().Name}: {ex.Message.Trim()}";
-            for (Exception? inner = ex.InnerException; inner != null; inner = inner.InnerException)
-            {
-                if (inner.Message.Trim() != ex.Message.Trim())
-                {
-                    reason += $" ({inner.Message.Trim()})";
-                }
-                if (inner is System.DirectoryServices.DirectoryServicesCOMException com
-                    && !string.IsNullOrWhiteSpace(com.ExtendedErrorMessage))
-                {
-                    reason += $" [{com.ExtendedErrorMessage.Trim().TrimEnd('\0')}]";
-                }
-            }
-            return reason;
         }
 
         // AD rejects empty strings for these attributes; null leaves them unset.
